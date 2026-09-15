@@ -25,12 +25,14 @@ Codex nên tuân thủ `AGENTS.md`; hướng dẫn chính thức OpenAI cũng l�
 
 | Khu vực | Trách nhiệm |
 |---|---|
-| `app/multi-niche/` | UI workflow và cấu hình Finance Editorial overlay |
+| `app/multi-niche/` | UI workflow, chọn style Edit; overlay Finance Editorial được ẩn và áp mặc định trên video |
 | `app/api/local-agent/` | Proxy server-side tới local agent, không lộ key trên frontend |
 | `lib/local-agent-client.js` | Client/contract giao tiếp local agent |
 | `local-agent/app.py` | HTTP routes và media/job endpoints |
 | `local-agent/agent_core.py` | Research, Kyma fallback, HeyGen, edit orchestration và job state |
 | `engine/scripts/compose_video.py` | FFmpeg compose, overlay, layout và render MP4 |
+| `engine/scripts/stock_broll.py` | Tìm stock theo ý hình ảnh cụ thể, ghép theo voice và fallback người dẫn |
+| `engine/scripts/technical_broll.py` | Dựng chuyển động sơ đồ/biểu đồ minh họa local bằng Pillow và FFmpeg |
 | `engine/scripts/generate_captions.py` | Sinh caption |
 | `config/` | Domain packs, content format và edit style preset |
 | `tests/` | Node regression/compatibility tests |
@@ -43,9 +45,9 @@ Codex nên tuân thủ `AGENTS.md`; hướng dẫn chính thức OpenAI cũng l�
 - Research trả về kênh, URL và các chỉ số công khai; không bịa dữ liệu thiếu.
 - Script generation trả về ba phương án từ video đã duyệt.
 - HeyGen dùng Photo Avatar III theo flow hiện tại.
-- Pexels là nguồn B-roll ưu tiên; Pixabay là fallback tùy chọn.
+- Pexels ưu tiên khi cảnh cần stock cụ thể; Pixabay là fallback tùy chọn. Proof/metaphor dựng đồ họa local theo mốc lời thoại đã căn.
 - UI hiển thị `Đang edit…` trong thời gian render.
-- Overlay không che mặt/phụ đề và giữ toàn bộ tùy chọn hiện có.
+- Overlay Finance Editorial được áp mặc định trên video, không hiện controls trên UI; không che mặt/phụ đề.
 - API key chỉ ở `.env.local`/Settings local và server-side proxy.
 
 ## Quy tắc an toàn
@@ -111,4 +113,3 @@ Giữ contract Research → Script → Source Video → Edit → Final.
 Không đọc/in/commit secret hoặc generated media. Không gọi API tốn phí và không deploy nếu chưa được phép.
 Kiểm tra git status, thực hiện thay đổi trong phạm vi, chạy test phù hợp và báo rõ file đã sửa.
 ```
-

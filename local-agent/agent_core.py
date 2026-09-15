@@ -953,6 +953,30 @@ def _media_duration_seconds(path: Path) -> float:
     return round(duration, 3)
 
 
+def _apply_voice_timing(plan: dict[str, Any], timestamp_rows: list[dict[str, Any]], media_duration: float) -> dict[str, Any]:
+    """Replace estimated equal beat lengths with actual aligned narration timing."""
+    beats = plan.get("beats") or []
+    applied = 0
+    for index, beat in enumerate(beats):
+        if index >= len(timestamp_rows):
+            break
+        row = timestamp_rows[index]
+        start = max(0.0, min(media_duration, float(row.get("start") or 0)))
+        end = max(start, min(media_duration, float(row.get("end") or start)))
+        if end - start < 0.12:
+            continue
+        beat["start"] = round(start, 3)
+        beat["end"] = round(end, 3)
+        beat["timing_source"] = "voice-alignment"
+        beat["alignment_mode"] = row.get("alignment_mode") or "matched"
+        beat["match_score"] = row.get("match_score")
+        applied += 1
+    plan["timing_source"] = "voice-alignment" if applied else "estimated"
+    plan["voice_aligned_beats"] = applied
+    plan["voice_alignment_rows"] = len(timestamp_rows)
+    return plan
+
+
 def render_edit(project_folder: Path, payload: dict[str, Any], progress: Callable[[int, str], None], domain: dict[str, Any] | str | None = None) -> dict[str, Any]:
     """Render a versioned MP4 from an approved source; never overwrite an earlier render."""
     source_name = str(payload.get("source_file") or "heygen_source.mp4")
@@ -1003,6 +1027,10 @@ def render_edit(project_folder: Path, payload: dict[str, Any], progress: Callabl
     python = os.getenv("PYTHON_EXECUTABLE") or os.sys.executable
     progress(20, "Đang nhận diện lời nói và căn phụ đề theo audio thật")
     _run_engine([python, str(engine_root / "scripts" / "transcribe_align_news.py"), str(source), str(phrase_path), str(timestamps), str(captions_base), str(transcript), str(payload.get("whisper_model") or "base")], ROOT.parent, 3600)
+    timestamp_rows = read_json(timestamps, []) or []
+    plan = _apply_voice_timing(plan, timestamp_rows, actual_duration)
+    write_json(project_folder / f"edit_plan-v{version}.json", plan)
+    write_json(project_folder / "edit_plan.json", plan)
     progress(43, "Đang chia phụ đề thành các thẻ dễ đọc")
     _run_engine([python, str(engine_root / "scripts" / "generate_captions.py"), str(timestamps), str(captions)], ROOT.parent, 300)
 
@@ -1027,7 +1055,7 @@ def render_edit(project_folder: Path, payload: dict[str, Any], progress: Callabl
         "font_size": max(42, min(96, int(overlay_input.get("fontSize") or overlay_input.get("font_size") or 78))),
         "position": str(overlay_input.get("position") or "top") if str(overlay_input.get("position") or "top") in {"top", "middle", "lower"} else "top",
         "align": str(overlay_input.get("align") or "left") if str(overlay_input.get("align") or "left") in {"left", "center", "right"} else "left",
-        "max_chars_per_line": max(12, min(34, int(overlay_input.get("maxCharsPerLine") or overlay_input.get("max_chars_per_line") or 24))),
+        "max_chars_per_line": max(12, min(34, int(overlay_input.get("maxCharsPerLine") or overlay_input.get("max_chars_per_line") or 16))),
         "text_color": safe_color(overlay_input.get("textColor") or overlay_input.get("text_color"), "#F4F7EF"),
         "accent_color": safe_color(overlay_input.get("accentColor") or overlay_input.get("accent_color"), "#B6FF36"),
         "background_color": safe_color(overlay_input.get("backgroundColor") or overlay_input.get("background_color"), "#060B16"),
@@ -1046,7 +1074,7 @@ def render_edit(project_folder: Path, payload: dict[str, Any], progress: Callabl
                 continue
             words = str(beat.get("spoken_meaning") or "").split()
             custom_index = len(overlays)
-            headline = custom_lines[custom_index] if custom_index < len(custom_lines) else " ".join(words[:10])
+            headline = custom_lines[custom_index] if custom_index < len(custom_lines) else " ".join(words[:6])
             overlays.append({"kicker": overlay_settings["kicker"], "text": headline, "start": beat.get("start", 0), "end": beat.get("end", 0)})
     overlays_path = project_folder / f"text_overlays-v{version}.json"
     plan["text_overlay"] = {**overlay_settings, "items": overlays}

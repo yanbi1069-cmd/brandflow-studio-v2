@@ -22,7 +22,8 @@ Tự điền key trong `.env.local` trên máy test. Không dán key vào issue,
 npm test
 npm run build
 python -m unittest discover -s local-agent/tests -v
-python -m py_compile local-agent/agent_core.py engine/scripts/compose_video.py
+python -m unittest discover -s engine/tests -v
+python -m py_compile local-agent/agent_core.py engine/scripts/stock_broll.py engine/scripts/technical_broll.py engine/scripts/compose_video.py
 ```
 
 Kỳ vọng Node tests đều pass, Next.js build thành công, Python không báo lỗi và không có request đến nhà cung cấp trả phí.
@@ -47,7 +48,7 @@ Kỳ vọng frontend tải được và health endpoint trả HTTP 200.
 3. Chạy research demo, chọn một video và đưa vào hàng đợi.
 4. Tạo ba kịch bản, duyệt một bản.
 5. Chọn no-face hoặc upload một video test local.
-6. Mở Edit, đổi style và các trường text overlay.
+6. Mở Edit, chọn style. Overlay Finance Editorial được ghép mặc định trên video, không có bảng chỉnh overlay trong UI.
 7. Xác nhận trạng thái/nút điều hướng hoạt động đến QA.
 
 Không bấm thao tác live nếu giao diện thông báo sẽ dùng API key/credit.
@@ -63,7 +64,7 @@ Chỉ thực hiện sau khi chủ tài khoản xác nhận cho phép dùng API c
 5. Duyệt một kịch bản.
 6. Chọn HeyGen Photo Avatar III, no-face hoặc upload video gốc.
 7. Với HeyGen, xác nhận riêng trước khi tạo; chờ job hoàn tất và kiểm tra source video mở được.
-8. Chọn style edit, cấu hình overlay rồi render.
+8. Chọn style edit rồi render; stock chỉ dùng cho cảnh cụ thể, đồ họa kỹ thuật được tạo local đúng mốc lời thoại.
 9. Khi render, UI phải hiển thị `Đang edit…` cho tới khi job kết thúc.
 10. Mở QA, kiểm tra kết quả và tải MP4.
 
@@ -75,12 +76,13 @@ Chỉ thực hiện sau khi chủ tài khoản xác nhận cho phép dùng API c
 | Playback | MP4 mở được, không hỏng frame |
 | Audio | Có tiếng, không clipping rõ rệt, đồng bộ hình |
 | Caption | Đọc được, đúng nhịp, không tràn safe area |
+| B-roll | Cảnh vật lý/đồ họa kỹ thuật khớp lời đọc ở đúng mốc; ý trừu tượng không bị ghép stock chung chung |
+| Technical proof | Sơ đồ hoặc biểu đồ có chuyển động rõ, không giả làm dữ liệu thực |
 | Kicker | Nhỏ, màu lime/accent đã chọn |
 | Headline | Lớn, tương phản tốt |
-| Background | Tối bán trong suốt đúng cấu hình |
-| Placement | `top`/`middle`/`lower` đúng lựa chọn |
-| Alignment | Trái/giữa/phải đúng lựa chọn |
-| Accent stripe | Bật/tắt và màu đúng cấu hình |
+| Background | Nền tối bán trong suốt theo preset mặc định |
+| Placement | Overlay mặc định không che mặt/phụ đề |
+| Accent stripe | Đúng màu lime của preset |
 | Subject safety | Không che mặt hoặc chi tiết chính |
 | Download | Route xem/tải trả HTTP 200 |
 
@@ -104,7 +106,6 @@ Lệnh thứ hai không được trả về secret, workspace hoặc generated m
 - Frontend không lên: kiểm tra Node version, `npm install` và port 3000.
 - Agent không health: cài `local-agent/requirements.txt`, kiểm tra Python và port 8765.
 - Render lỗi: chạy `ffmpeg -version` và `ffprobe -version`; kiểm tra source video tồn tại.
-- B-roll trống: kiểm tra key Pexels/Pixabay; Pixabay là fallback tùy chọn.
+- B-roll trống: ý trừu tượng sẽ giữ người dẫn theo thiết kế; với cảnh stock cụ thể, kiểm tra key Pexels/Pixabay (Pixabay tùy chọn). Đồ họa kỹ thuật dùng Pillow và FFmpeg local.
 - HeyGen chờ lâu: theo dõi job, không gửi lại nhiều request tạo video.
 - Overlay lỗi: giữ artifact local, kiểm tra edit request và filter compose trước khi render lại.
-

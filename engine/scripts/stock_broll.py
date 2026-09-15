@@ -14,11 +14,13 @@ import json
 import os
 import re
 import time
+import unicodedata
 from pathlib import Path
 from typing import Any
 
 import pexels_search
 import pixabay_search
+import technical_broll
 
 PROVIDERS = {"pexels": pexels_search, "pixabay": pixabay_search}
 KEY_NAMES = {"pexels": "PEXELS_API_KEY", "pixabay": "PIXABAY_API_KEY"}
@@ -37,6 +39,36 @@ def write_json(path: Path, value: Any) -> None:
 def safe_query(value: str) -> str:
     value = re.sub(r"\s+", " ", re.sub(r"[^\w\s%-]", " ", value, flags=re.UNICODE)).strip()
     return value[:100] or "business lifestyle"
+
+
+def normalized_text(value: str) -> str:
+    value = unicodedata.normalize("NFKD", str(value).lower())
+    value = "".join(character for character in value if not unicodedata.combining(character))
+    return re.sub(r"[^a-z0-9]+", " ", value).strip()
+
+
+def semantic_stock_query(beat: dict[str, Any], domain_id: str = "") -> tuple[str, str]:
+    """Translate narration meaning into a concrete stock-search intent.
+
+    Stock APIs perform much better with concise English visual objects/actions
+    than with a full Vietnamese claim or conclusion.
+    """
+    spoken = str(beat.get("spokenMeaning") or beat.get("spoken_meaning") or "")
+    explicit = str(beat.get("assetQuery") or beat.get("asset_query") or "").strip()
+    normalized = normalized_text(explicit or spoken)
+    mappings = [
+        (("ly nuoc", "mep ban", "day ly", "cham mep"), "hand pushing glass of water near table edge close up", "physical-metaphor"),
+        (("khach hang", "tu van"), "business consultant meeting client office", "client-context"),
+        (("hoc vien", "dao tao", "lop hoc"), "adult students learning in modern classroom", "education-context"),
+        (("bac si", "benh nhan", "suc khoe"), "doctor consulting patient in clinic", "health-context"),
+        (("san pham", "dong goi"), "small business product packaging close up", "product-context"),
+        (("dien thoai", "mang xa hoi"), "person scrolling social media on smartphone close up", "social-context"),
+        (("may tinh", "lam viec", "quy trinh"), "professional working on computer at desk close up", "work-context"),
+    ]
+    for triggers, query, intent in mappings:
+        if any(trigger in normalized for trigger in triggers):
+            return query, intent
+    return "", "no-concrete-visual"
 
 
 def cache_path(cache_dir: Path, provider: str, query: str) -> Path:
@@ -86,15 +118,81 @@ def prepare_context_broll(edit_plan_path: Path, media_dir: Path, slots_path: Pat
     slots: list[dict] = []
     assets: list[dict] = []
     fallbacks: list[dict] = []
+    palette = (plan.get("style") or {}).get("palette") or []
+    domain_id = str(plan.get("domain_pack_id") or "")
+    beats_by_id = {str(beat.get("id")): beat for beat in plan.get("beats", [])}
     for beat in plan.get("beats", []):
         role = beat.get("visualRole") or beat.get("visual_role")
+        name = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(beat.get("id") or f"beat-{len(slots)+1}"))
+        start, end = float(beat.get("start", 0)), float(beat.get("end", 0))
+        if role in {"proof", "metaphor"}:
+            if dry_run:
+                fallbacks.append({"beat_id": beat.get("id"), "status": "planned-technical-motion", "start": start, "end": end})
+                continue
+            output = media_dir / "chartanimator" / f"{name}.mp4"
+            try:
+                technical = technical_broll.render_technical_clip(beat, output, palette)
+            except Exception as error:
+                fallbacks.append({"beat_id": beat.get("id"), "status": "technical-render-error-use-presenter", "message": str(error)[:240]})
+                continue
+            slots.append({"name": name, "type": "chart", "start": start, "end": end, "visual_role": role})
+            assets.append({
+                "provider": "brandflow-local",
+                "file": str(output.relative_to(media_dir.parent)).replace("\\", "/"),
+                "usage": "technical-proof",
+                "beat_id": beat.get("id"),
+                "start": start,
+                "end": end,
+                **technical,
+            })
+            continue
         if role != "context":
             continue
-        name = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(beat.get("id") or f"context-{len(slots)+1}"))
-        query = safe_query(str(beat.get("assetQuery") or beat.get("asset_query") or beat.get("spokenMeaning") or beat.get("spoken_meaning") or ""))
+        query, intent = semantic_stock_query(beat, domain_id)
+        if intent == "physical-metaphor":
+            if dry_run:
+                fallbacks.append({"beat_id": beat.get("id"), "status": "planned-local-metaphor", "intent": intent})
+                continue
+            if slots and assets and assets[-1].get("kind") == "glass-metaphor" and start - slots[-1]["end"] <= 0.75:
+                previous = assets[-1]
+                carrier = beats_by_id.get(str(previous.get("beat_id"))) or beat
+                extended = {**carrier, "start": slots[-1]["start"], "end": end}
+                source = media_dir.parent / str(previous["file"])
+                try:
+                    technical = technical_broll.render_technical_clip(extended, source, palette)
+                except Exception as error:
+                    fallbacks.append({"beat_id": beat.get("id"), "status": "metaphor-extend-error-use-presenter", "message": str(error)[:240]})
+                    continue
+                slots[-1]["end"] = end
+                previous["end"] = end
+                previous["duration"] = technical["duration"]
+                previous.setdefault("voice_beat_ids", [previous["beat_id"]]).append(beat.get("id"))
+                continue
+            output = media_dir / "chartanimator" / f"{name}.mp4"
+            try:
+                technical = technical_broll.render_technical_clip(beat, output, palette)
+            except Exception as error:
+                fallbacks.append({"beat_id": beat.get("id"), "status": "metaphor-render-error-use-presenter", "message": str(error)[:240]})
+                continue
+            slots.append({"name": name, "type": "chart", "start": start, "end": end, "visual_role": "context"})
+            assets.append({
+                "provider": "brandflow-local",
+                "file": str(output.relative_to(media_dir.parent)).replace("\\", "/"),
+                "usage": "voice-matched-metaphor",
+                "intent": intent,
+                "beat_id": beat.get("id"),
+                "start": start,
+                "end": end,
+                **technical,
+            })
+            continue
+        if not query:
+            fallbacks.append({"beat_id": beat.get("id"), "status": "no-concrete-visual-use-presenter", "spoken_meaning": str(beat.get("spoken_meaning") or "")[:140]})
+            continue
+        query = safe_query(query)
         providers = beat.get("stockProviders") or beat.get("stock_providers") or ["pexels", "pixabay"]
         if dry_run:
-            fallbacks.append({"beat_id": beat.get("id"), "query": query, "status": "planned", "provider_order": providers})
+            fallbacks.append({"beat_id": beat.get("id"), "query": query, "intent": intent, "status": "planned-stock", "provider_order": providers})
             continue
         asset, attempts = select_asset(query, cache_dir, used_urls, providers)
         if not asset:
@@ -104,11 +202,10 @@ def prepare_context_broll(edit_plan_path: Path, media_dir: Path, slots_path: Pat
         output = media_dir / provider / f"{name}.mp4"
         PROVIDERS[provider].download_video(asset["download_url"], str(output))
         used_urls.add(asset["download_url"])
-        start, end = float(beat.get("start", 0)), float(beat.get("end", 0))
-        slots.append({"name": name, "type": provider, "start": start, "end": end})
-        assets.append({**{k: v for k, v in asset.items() if k != "download_url"}, "file": str(output.relative_to(media_dir.parent)).replace("\\", "/"), "usage": "context-broll", "beat_id": beat.get("id"), "start": start, "end": end, "attempts": attempts})
+        slots.append({"name": name, "type": provider, "start": start, "end": end, "visual_role": role})
+        assets.append({**{k: v for k, v in asset.items() if k != "download_url"}, "query": query, "intent": intent, "file": str(output.relative_to(media_dir.parent)).replace("\\", "/"), "usage": "context-broll", "beat_id": beat.get("id"), "start": start, "end": end, "attempts": attempts})
     write_json(slots_path, {"slots": slots})
-    manifest = {"schema_version": 1, "provider_order": ["owned-assets", "pexels", "pixabay", "presenter-or-typography"], "stock_is_context_only": True, "assets": assets, "fallbacks": fallbacks}
+    manifest = {"schema_version": 2, "provider_order": ["brandflow-local-technical", "owned-assets", "pexels", "pixabay", "presenter-or-typography"], "stock_is_context_only": True, "technical_proof_is_generated": True, "assets": assets, "fallbacks": fallbacks}
     write_json(manifest_path, manifest)
     return manifest
 

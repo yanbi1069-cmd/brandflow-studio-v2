@@ -67,6 +67,25 @@ class CoreFlowTests(unittest.TestCase):
             self.assertEqual(context["source_order"][:3], ["owned-assets", "pexels", "pixabay"])
             self.assertTrue(all(not beat["stock_providers"] for beat in plan["beats"] if beat["visual_role"] != "context"))
 
+    def test_voice_alignment_replaces_equal_beat_timing(self):
+        plan = {
+            "beats": [
+                {"id": "beat-1", "start": 0, "end": 5},
+                {"id": "beat-2", "start": 5, "end": 10},
+            ]
+        }
+        timestamps = [
+            {"start": 0.42, "end": 2.15, "alignment_mode": "matched", "match_score": 0.91},
+            {"start": 2.31, "end": 7.84, "alignment_mode": "proportional", "match_score": 0.35},
+        ]
+
+        result = agent_core._apply_voice_timing(plan, timestamps, 8.0)
+
+        self.assertEqual(result["beats"][0]["start"], 0.42)
+        self.assertEqual(result["beats"][1]["end"], 7.84)
+        self.assertEqual(result["beats"][1]["timing_source"], "voice-alignment")
+        self.assertEqual(result["voice_aligned_beats"], 2)
+
     def test_qa_requires_every_check_and_explicit_approval(self):
         with tempfile.TemporaryDirectory() as temp:
             folder = Path(temp)

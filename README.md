@@ -12,13 +12,14 @@ BrandFlow Studio V2 kết hợp Next.js studio với local Python agent để re
 - Bảng kết quả có kênh, link, view, like, comment, share, tương tác và lý do nổi bật.
 - Sinh ba kịch bản từ video đã duyệt bằng nhiều model Kyma có fallback.
 - Ba nguồn video: HeyGen Photo Avatar III, no-face hoặc upload video gốc.
-- B-roll từ Pexels, fallback sang Pixabay.
+- Stock B-roll cho cảnh cụ thể: tìm bằng ý hình ảnh ngắn gọn, ưu tiên Pexels và fallback Pixabay; ý trừu tượng giữ người dẫn thay vì chèn stock sai lời.
+- B-roll kỹ thuật (sơ đồ, biểu đồ minh họa, ví dụ vật lý) được dựng local theo mốc giọng đọc, không cần API hình ảnh trả phí. Biểu đồ là mô phỏng, không thay thế dữ liệu thị trường thật.
 - Render MP4 dọc 1080×1920 với trạng thái job thực.
-- Finance Editorial overlay: kicker lime, headline trắng, nền tối bán trong suốt.
+- Text overlay Finance Editorial mặc định trên video: kicker lime, headline trắng, nền tối bán trong suốt; không hiện bảng chỉnh overlay ở bước Edit.
 - QA trước khi tải video thành phẩm.
 - Demo mode để kiểm tra giao diện mà không tiêu API credit.
 
-Overlay cho phép bật/tắt; sửa từng dòng; đổi cỡ chữ, vị trí `top`/`middle`/`lower`, căn trái/giữa/phải, màu chữ, màu accent, độ trong suốt nền, accent stripe và chế độ viết hoa.
+Preset overlay được giữ nội bộ để render tự động. Người dùng chỉ cần chọn phong cách Edit rồi chờ MP4 hoàn tất.
 
 ## Yêu cầu hệ thống
 
@@ -69,7 +70,7 @@ Các biến model Kyma trong `.env.example` có giá trị mặc định và có
 4. Tạo ba kịch bản, chọn và duyệt một bản.
 5. Tạo HeyGen video, chọn no-face hoặc upload video gốc.
 6. Chờ source video hoàn tất.
-7. Chọn style edit và cấu hình text overlay.
+7. Chọn style edit; B-roll và text overlay được tự động ghép theo mốc audio thực tế.
 8. Render video, kiểm tra QA và tải MP4.
 
 Các thao tác HeyGen và API live có thể phát sinh chi phí. Chỉ bấm chạy sau khi chủ tài khoản xác nhận.
@@ -80,7 +81,8 @@ Các thao tác HeyGen và API live có thể phát sinh chi phí. Chỉ bấm ch
 npm test
 npm run build
 python -m unittest discover -s local-agent/tests -v
-python -m py_compile local-agent/agent_core.py engine/scripts/compose_video.py
+python -m unittest discover -s engine/tests -v
+python -m py_compile local-agent/agent_core.py engine/scripts/stock_broll.py engine/scripts/technical_broll.py engine/scripts/compose_video.py
 ```
 
 Hướng dẫn test thủ công đầy đủ: [docs/TEST_LOCAL_V2.md](docs/TEST_LOCAL_V2.md).
@@ -112,4 +114,3 @@ tests/          Node contract/regression tests
 - [Kiến trúc](docs/ARCHITECTURE.md)
 - [Đặc tả](docs/SPEC.md)
 - [Production engine](engine/PRODUCTION.md)
-
