@@ -879,7 +879,7 @@ def build_edit_plan(project_folder: Path, payload: dict[str, Any], domain: dict[
     script = read_json(project_folder / "approved_script.json", {}) or {}
     text = str(script.get("text") or "").strip()
     segments = [item.strip() for item in re.split(r"\n+|(?<=[.!?])\s+", text) if item.strip()] or ["Bổ sung nội dung đã duyệt trước khi dựng."]
-    duration = max(12, min(90, int(payload.get("target_seconds") or 55)))
+    duration = round(max(1.0, min(7200.0, float(payload.get("target_seconds") or 55))), 3)
     per_beat = duration / len(segments)
     proof_types = domain_pack.get("proofTypes") or ["owned-assets"]
     effects = style.get("textEffects") or ["fade-rise"]
@@ -930,6 +930,29 @@ def _safe_project_file(project_folder: Path, relative: str) -> Path:
     return target
 
 
+def _media_duration_seconds(path: Path) -> float:
+    probe = subprocess.run(
+        [
+            "ffprobe", "-v", "error", "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1", str(path),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=60,
+    )
+    if probe.returncode:
+        raise RuntimeError("Không đọc được thời lượng video nguồn.")
+    try:
+        duration = float(probe.stdout.strip())
+    except (TypeError, ValueError) as error:
+        raise RuntimeError("Video nguồn không có thời lượng hợp lệ.") from error
+    if duration <= 0:
+        raise RuntimeError("Video nguồn không có thời lượng hợp lệ.")
+    return round(duration, 3)
+
+
 def render_edit(project_folder: Path, payload: dict[str, Any], progress: Callable[[int, str], None], domain: dict[str, Any] | str | None = None) -> dict[str, Any]:
     """Render a versioned MP4 from an approved source; never overwrite an earlier render."""
     source_name = str(payload.get("source_file") or "heygen_source.mp4")
@@ -950,7 +973,13 @@ def render_edit(project_folder: Path, payload: dict[str, Any], progress: Callabl
         source = canvas
     progress(8, "Đang phân tích kịch bản và timeline giọng nói")
     domain_pack = get_domain_pack(domain) if isinstance(domain, str) or domain is None else domain
-    plan = build_edit_plan(project_folder, payload, domain_pack)
+    requested_duration = float(payload.get("target_seconds") or 55)
+    actual_duration = _media_duration_seconds(source)
+    plan_payload = {**payload, "target_seconds": actual_duration}
+    plan = build_edit_plan(project_folder, plan_payload, domain_pack)
+    plan["requested_duration_seconds"] = requested_duration
+    plan["duration_seconds"] = actual_duration
+    plan["duration_source"] = "source_media"
     plan["version"] = version
     plan["output_spec"] = {"width": 1080, "height": 1920, "aspect_ratio": "9:16", "container": "mp4"}
     plan["feedback"] = str(payload.get("feedback") or "").strip()
@@ -995,7 +1024,7 @@ def render_edit(project_folder: Path, payload: dict[str, Any], progress: Callabl
         "enabled": bool(overlay_input.get("enabled", True)),
         "preset": "finance-editorial",
         "kicker": str(overlay_input.get("kicker") or "ĐIỂM CẦN NHỚ").strip()[:60],
-        "font_size": max(42, min(96, int(overlay_input.get("fontSize") or overlay_input.get("font_size") or 62))),
+        "font_size": max(42, min(96, int(overlay_input.get("fontSize") or overlay_input.get("font_size") or 78))),
         "position": str(overlay_input.get("position") or "top") if str(overlay_input.get("position") or "top") in {"top", "middle", "lower"} else "top",
         "align": str(overlay_input.get("align") or "left") if str(overlay_input.get("align") or "left") in {"left", "center", "right"} else "left",
         "max_chars_per_line": max(12, min(34, int(overlay_input.get("maxCharsPerLine") or overlay_input.get("max_chars_per_line") or 24))),
@@ -1003,7 +1032,7 @@ def render_edit(project_folder: Path, payload: dict[str, Any], progress: Callabl
         "accent_color": safe_color(overlay_input.get("accentColor") or overlay_input.get("accent_color"), "#B6FF36"),
         "background_color": safe_color(overlay_input.get("backgroundColor") or overlay_input.get("background_color"), "#060B16"),
         "background_opacity": max(0.2, min(0.95, float(overlay_input.get("backgroundOpacity") or overlay_input.get("background_opacity") or .72))),
-        "accent_stripe": bool(overlay_input.get("accentStripe", overlay_input.get("accent_stripe", False))),
+        "accent_stripe": bool(overlay_input.get("accentStripe", overlay_input.get("accent_stripe", True))),
         "uppercase": bool(overlay_input.get("uppercase", True)),
     }
     custom_lines = overlay_input.get("lines") or []

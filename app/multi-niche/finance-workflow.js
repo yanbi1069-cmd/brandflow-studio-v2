@@ -16,22 +16,15 @@ const API_GUIDES = [
   { id: "pexels", name: "Pexels", purpose: "Nguồn B-roll đời sống ưu tiên", home: "https://www.pexels.com/", keyUrl: "https://www.pexels.com/api/new/", steps: ["Tạo tài khoản Pexels.", "Mở trang Pexels API.", "Yêu cầu API key.", "Dán key vào Cài đặt; BrandFlow sẽ lưu link nguồn và tác giả trong media manifest."] },
   { id: "pixabay", name: "Pixabay", purpose: "Nguồn B-roll dự phòng khi Pexels không phù hợp", home: "https://pixabay.com/", keyUrl: "https://pixabay.com/api/docs/", steps: ["Tạo hoặc đăng nhập tài khoản Pixabay.", "Mở Pixabay API Documentation để xem API key của tài khoản.", "Sao chép key và dán vào mục Cài đặt.", "BrandFlow tải clip về job, cache kết quả và lưu trang nguồn/tác giả theo Content License."] },
 ];
-const DEFAULT_TEXT_OVERLAY = {
-  enabled: true,
-  preset: "finance-editorial",
-  kicker: "ĐIỂM CẦN NHỚ",
-  lines: "",
-  fontSize: 62,
-  position: "top",
-  align: "left",
-  maxCharsPerLine: 24,
-  textColor: "#F4F7EF",
-  accentColor: "#B6FF36",
-  backgroundColor: "#060B16",
-  backgroundOpacity: 0.72,
-  accentStripe: false,
-  uppercase: true,
-};
+const SPEECH_TOKENS_PER_SECOND = 4.5;
+const EDIT_PHASES = [
+  { label: "Chuẩn bị", doneAt: 8 },
+  { label: "Căn phụ đề", doneAt: 43 },
+  { label: "Chọn B-roll", doneAt: 68 },
+  { label: "Dựng video", doneAt: 93 },
+  { label: "Kiểm tra", doneAt: 100 },
+];
+const EMPTY_EDIT_RUN = { status: "idle", progress: 0, message: "", error: "" };
 
 function Icon({ name }) {
   const paths = {
@@ -99,13 +92,21 @@ function validScriptCandidate(item) {
   return useful(item?.angle, 4) && useful(item?.hook, 12) && useful(item?.body, 120) && useful(item?.cta, 8);
 }
 
-function overlaySuggestions(script) {
-  if (!script) return "";
-  const sentences = [script.hook, ...String(script.body || "").split(/(?<=[.!?])\s+|\r?\n/), script.cta]
-    .map((value) => String(value || "").trim())
-    .filter(Boolean)
-    .map((value) => value.split(/\s+/).slice(0, 10).join(" "));
-  return [...new Set(sentences)].slice(0, 6).join("\n");
+function scriptTiming(script, speed = 1, targetSeconds = 55) {
+  const text = [script?.hook, script?.body, script?.cta, script?.disclaimer].filter(Boolean).join(" ").trim();
+  const tokenCount = text ? text.split(/\s+/).filter(Boolean).length : 0;
+  const safeSpeed = Math.max(0.5, Math.min(1.5, Number(speed) || 1));
+  const estimatedSeconds = Math.max(1, Math.round(tokenCount / (SPEECH_TOKENS_PER_SECOND * safeSpeed)));
+  const delta = estimatedSeconds - Number(targetSeconds || 55);
+  return { tokenCount, estimatedSeconds, onTarget: Math.abs(delta) <= Math.max(5, targetSeconds * 0.12), delta };
+}
+
+function friendlyTaskError(value) {
+  const message = String(value || "");
+  if (/Could not align phrase|align_phrases|transcribe_align_news/i.test(message)) return "Chưa căn được một số câu với giọng đọc. Video nguồn vẫn được giữ nguyên; hãy bấm Thử dựng lại.";
+  if (/faster[_ -]?whisper|transcrib|ffprobe|ffmpeg/i.test(message)) return "Bộ xử lý video gặp lỗi ở bước âm thanh hoặc dựng hình. Hãy kiểm tra FFmpeg rồi thử dựng lại.";
+  if (/Traceback|File \".*\.py\"/i.test(message)) return "Chưa thể hoàn tất video ở lần dựng này. Video nguồn vẫn an toàn; hãy thử dựng lại.";
+  return message.length > 260 ? `${message.slice(0, 257)}...` : message || "Không thể hoàn tất tác vụ.";
 }
 
 export default function FinanceWorkflow() {
@@ -142,8 +143,8 @@ export default function FinanceWorkflow() {
   const [sourceArtifact, setSourceArtifact] = useState(null);
   const [styleId, setStyleId] = useState("editorial-proof");
   const selectedStyle = editStyles.find((item) => item.id === styleId) || editStyles[0];
-  const [textOverlay, setTextOverlay] = useState(DEFAULT_TEXT_OVERLAY);
   const [editPlan, setEditPlan] = useState(null);
+  const [editRun, setEditRun] = useState(EMPTY_EDIT_RUN);
   const [feedbackText, setFeedbackText] = useState("");
   const [feedback, setFeedback] = useState([]);
   const [videoTask, setVideoTask] = useState("");
@@ -183,7 +184,6 @@ export default function FinanceWorkflow() {
         if (saved.upload) setUpload(saved.upload);
         if (saved.sourceArtifact) setSourceArtifact(saved.sourceArtifact);
         if (saved.styleId) setStyleId(saved.styleId);
-        if (saved.textOverlay) setTextOverlay((current) => ({ ...current, ...saved.textOverlay }));
         if (saved.editPlan) setEditPlan(saved.editPlan);
         if (saved.feedback) setFeedback(saved.feedback);
         if (saved.qa) setQa(saved.qa);
@@ -195,8 +195,8 @@ export default function FinanceWorkflow() {
 
   useEffect(() => {
     if (!hydrated) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ domainId, formatId, brand, research, rows, manualTopic, selectedVideos, researchApproved, scripts, selectedScriptId, scriptApproved, sourceRoute, avatar, noface, upload, sourceArtifact, styleId, textOverlay, editPlan, feedback, qa, finalApproved, publish }));
-  }, [hydrated, domainId, formatId, brand, research, rows, manualTopic, selectedVideos, researchApproved, scripts, selectedScriptId, scriptApproved, sourceRoute, avatar, noface, upload, sourceArtifact, styleId, textOverlay, editPlan, feedback, qa, finalApproved, publish]);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ domainId, formatId, brand, research, rows, manualTopic, selectedVideos, researchApproved, scripts, selectedScriptId, scriptApproved, sourceRoute, avatar, noface, upload, sourceArtifact, styleId, editPlan, feedback, qa, finalApproved, publish }));
+  }, [hydrated, domainId, formatId, brand, research, rows, manualTopic, selectedVideos, researchApproved, scripts, selectedScriptId, scriptApproved, sourceRoute, avatar, noface, upload, sourceArtifact, styleId, editPlan, feedback, qa, finalApproved, publish]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -231,13 +231,14 @@ export default function FinanceWorkflow() {
     setResearch((current) => ({ ...current, platforms: current.platforms.includes(platform) ? current.platforms.filter((item) => item !== platform) : [...current.platforms, platform] }));
   }
 
-  async function waitForAgentJob(jobId, fallbackMessage) {
+  async function waitForAgentJob(jobId, fallbackMessage, onUpdate) {
     for (let attempt = 0; attempt < 1200; attempt += 1) {
       const response = await fetch(`/api/local-agent/jobs/${jobId}`, { cache: "no-store" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Không đọc được trạng thái tác vụ.");
       const job = data.job;
       setTaskMessage(job.message || fallbackMessage);
+      if (onUpdate) onUpdate(job);
       if (job.status === "done") return job.result;
       if (["error", "interrupted"].includes(job.status)) throw new Error(job.message || "Tác vụ thất bại.");
       await new Promise((resolve) => setTimeout(resolve, 2500));
@@ -269,7 +270,7 @@ export default function FinanceWorkflow() {
     setBusy("script"); setNotice("");
     try {
       const source = sourceVideo;
-      const response = await fetch("/api/multi-niche/script", { method: "POST", headers: { "Content-Type": "application/json", ...(secrets.kyma ? { "x-kyma-key": secrets.kyma } : {}) }, body: JSON.stringify({ domainId, formatId, brandName: brand.name, niche: brand.niche, audience: brand.audience, voice: brand.voice, cta: brand.cta, trendTitle: source.title, trendHook: source.viralReason, trendUrl: source.url, targetSeconds: Number(avatar.duration || 55) }) });
+      const response = await fetch("/api/multi-niche/script", { method: "POST", headers: { "Content-Type": "application/json", ...(secrets.kyma ? { "x-kyma-key": secrets.kyma } : {}) }, body: JSON.stringify({ domainId, formatId, brandName: brand.name, niche: brand.niche, audience: brand.audience, voice: brand.voice, cta: brand.cta, trendTitle: source.title, trendHook: source.viralReason, trendUrl: source.url, targetSeconds: Number(avatar.duration || 55), voiceSpeed: Number(avatar.speed || 1) }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
       const candidates = (data.candidates || []).map((item) => ({ ...item, id: `${source.id}-${item.id}`, sourceId: source.id, sourceTitle: source.title }));
@@ -322,6 +323,7 @@ export default function FinanceWorkflow() {
   async function createSourceArtifact() {
     const sourceOnlyMode = entryMode === "edit" || entryMode === "publish";
     if (!scriptApproved && !sourceOnlyMode) return setNotice("Hãy duyệt kịch bản trước khi chuẩn bị source video.");
+    if (!sourceOnlyMode && !scriptTiming(selectedScript, avatar.speed, avatar.duration).onTarget) return setNotice("Kịch bản chưa khớp thời lượng mục tiêu. Hãy chỉnh độ dài rồi duyệt lại trước khi tạo video.");
     if (sourceOnlyMode && sourceRoute !== "upload") return setNotice("Edit-only/Publish-only cần chọn file nguồn.");
     if (sourceRoute === "noface" && noface.voiceSource !== "tts" && !voiceUpload) return setNotice("Hãy tải tệp giọng đọc trước khi tạo video No-face.");
     if (sourceRoute === "upload" && !sourceFile) return setNotice("Hãy chọn lại video nguồn trong phiên hiện tại trước.");
@@ -373,14 +375,23 @@ export default function FinanceWorkflow() {
     if (!sourceArtifact) return setNotice("Hãy chuẩn bị source video trước khi tạo edit plan.");
     if (!sourceArtifact.projectId || !sourceArtifact.sourceFile) return setNotice("Nguồn hiện tại chưa có file video/audio trong local-agent để dựng.");
     setBusy("edit"); setVideoTask("editing"); setTaskStartedAt(Date.now()); setTaskMessage("Đang gửi tác vụ dựng tới local-agent..."); setNotice("");
+    setEditRun({ status: "running", progress: 2, message: "Đang chuẩn bị video nguồn...", error: "" });
     try {
-      const response = await fetch("/api/local-agent/edit", { method: "POST", headers: { "Content-Type": "application/json", ...(secrets.pexels ? { "x-pexels-key": secrets.pexels } : {}), ...(secrets.pixabay ? { "x-pixabay-key": secrets.pixabay } : {}) }, body: JSON.stringify({ projectId: sourceArtifact.projectId, sourceFile: sourceArtifact.sourceFile, styleId, videoMode: sourceRoute, targetSeconds: Number(avatar.duration), version, feedback: feedbackOverride, footer: brand.name, textOverlay: { ...textOverlay, lines: textOverlay.lines.split(/\r?\n/).map((item) => item.trim()).filter(Boolean) } }) });
+      const response = await fetch("/api/local-agent/edit", { method: "POST", headers: { "Content-Type": "application/json", ...(secrets.pexels ? { "x-pexels-key": secrets.pexels } : {}), ...(secrets.pixabay ? { "x-pixabay-key": secrets.pixabay } : {}) }, body: JSON.stringify({ projectId: sourceArtifact.projectId, sourceFile: sourceArtifact.sourceFile, styleId, videoMode: sourceRoute, targetSeconds: Number(avatar.duration), version, feedback: feedbackOverride, footer: brand.name }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
-      const result = await waitForAgentJob(data.job.id, "Agent đang dựng video...");
+      const result = await waitForAgentJob(data.job.id, "Agent đang dựng video...", (job) => {
+        const failed = ["error", "interrupted"].includes(job.status);
+        const message = failed ? friendlyTaskError(job.message) : (job.message || "Agent đang dựng video...");
+        setEditRun({ status: failed ? "error" : "running", progress: Number(job.progress || 0), message, error: failed ? message : "" });
+      });
       const mediaUrl = `/api/local-agent/media?projectId=${encodeURIComponent(sourceArtifact.projectId)}&file=${encodeURIComponent(result.file)}`;
-      setEditPlan(result.edit_plan); setVideoPreviewUrl(mediaUrl); setPreviewKind("final"); setFinalVideoName(result.file); setFinalApproved(false); setQa(QA_DEFAULT); setNotice(`Đã dựng xong phiên bản ${result.version} · MP4 1080x1920. Hãy xem toàn bộ video trước khi tải.`);
-    } catch (error) { setNotice(error.message || "Không thể tạo edit plan."); }
+      setEditPlan(result.edit_plan); setVideoPreviewUrl(mediaUrl); setPreviewKind("final"); setFinalVideoName(result.file); setFinalApproved(false); setQa(QA_DEFAULT); setEditRun({ status: "done", progress: 100, message: "Video hoàn chỉnh đã sẵn sàng.", error: "" }); setNotice(`Đã dựng xong phiên bản ${result.version} · MP4 1080x1920. Hãy xem toàn bộ video trước khi tải.`);
+    } catch (error) {
+      const friendly = friendlyTaskError(error.message);
+      setEditRun((current) => ({ ...current, status: "error", message: friendly, error: friendly }));
+      setNotice("Lần dựng này chưa hoàn tất. Video nguồn vẫn được giữ nguyên; bạn có thể thử lại ngay tại bước Dựng video.");
+    }
     finally { setVideoTask(""); setBusy(""); setTaskStartedAt(0); setTaskMessage(""); }
   }
 
@@ -420,6 +431,7 @@ export default function FinanceWorkflow() {
 
   const progress = [researchApproved, scriptApproved, Boolean(sourceArtifact), Boolean(editPlan), finalApproved].filter(Boolean).length;
   const visibleScripts = scripts.filter((item) => item.sourceId === scriptSourceId && selectableScript(item));
+  const selectedTiming = selectedScript ? scriptTiming(selectedScript, avatar.speed, avatar.duration) : null;
   const videoTaskLabel = videoTask === "editing" ? "Đang edit..." : videoTask === "processing" ? "Đang xử lý video..." : "Đang tạo video...";
 
   return <main className={styles.page}>
@@ -431,7 +443,7 @@ export default function FinanceWorkflow() {
     <button className={styles.guideButton} onClick={() => {setGuideOpen((value) => !value);setSettingsOpen(false);}} aria-expanded={guideOpen}><Icon name="book"/><strong>Hướng dẫn lấy API</strong><small>Link và từng bước thiết lập</small></button>
     <nav className={styles.steps} aria-label="Quy trình tạo video">{[["2","Nghiên cứu"],["3","Kịch bản"],["4","Video nguồn"],["5","Dựng video"],["6","Thành phẩm"]].map(([step,label], index) => <a key={step} href={`#step-${step}`}><b>{index + 1}</b><span>{label}</span></a>)}</nav>
     {notice && <Status tone={notice.includes("cần") || notice.includes("Hãy") ? "warning" : "info"}>{notice}</Status>}
-    {(videoTask || busy === "research") && <div className={styles.taskToast} role="status" aria-live="polite"><span className={styles.spinner}/><div><strong>{taskMessage || videoTaskLabel}</strong><small>Đã chạy {elapsedLabel(elapsedSeconds)} · Bạn có thể tiếp tục theo dõi ngay trên bước hiện tại.</small></div></div>}
+    {((videoTask && videoTask !== "editing") || busy === "research") && <div className={styles.taskToast} role="status" aria-live="polite"><span className={styles.spinner}/><div><strong>{taskMessage || videoTaskLabel}</strong><small>Đã chạy {elapsedLabel(elapsedSeconds)} · Bạn có thể tiếp tục theo dõi ngay trên bước hiện tại.</small></div></div>}
     {settingsOpen && <Section number="CĐ" title="Cài đặt hệ thống" subtitle="Khóa API chỉ được giữ trong bộ nhớ của tab hiện tại và không nằm trong tệp dự án." state="Bảo mật theo phiên">
       <div className={styles.formGrid}><Field label="Tên thương hiệu"><input value={brand.name} onChange={(event) => setBrand({...brand,name:event.target.value})}/></Field><Field label="Định dạng nội dung"><select value={formatId} onChange={(event) => setFormatId(event.target.value)}>{contentFormats.map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}</select></Field><Field label="Khách hàng mục tiêu"><textarea rows="2" value={brand.audience} onChange={(event) => setBrand({...brand,audience:event.target.value})}/></Field><Field label="Giọng thương hiệu"><textarea rows="2" value={brand.voice} onChange={(event) => setBrand({...brand,voice:event.target.value})}/></Field><Field label="Apify API Token"><input type="password" autoComplete="off" placeholder="••••••••••••" value={secrets.apify} onChange={(event)=>setSecrets({...secrets,apify:event.target.value})}/></Field><Field label="Kyma API Key"><input type="password" autoComplete="off" placeholder="••••••••••••" value={secrets.kyma} onChange={(event)=>setSecrets({...secrets,kyma:event.target.value})}/></Field><Field label="HeyGen API Key"><input type="password" autoComplete="off" placeholder="••••••••••••" value={secrets.heygen} onChange={(event)=>setSecrets({...secrets,heygen:event.target.value})}/></Field><Field label="Pexels API Key"><input type="password" autoComplete="off" placeholder="••••••••••••" value={secrets.pexels} onChange={(event)=>setSecrets({...secrets,pexels:event.target.value})}/></Field><Field label="Pixabay API Key"><input type="password" autoComplete="off" placeholder="••••••••••••" value={secrets.pixabay} onChange={(event)=>setSecrets({...secrets,pixabay:event.target.value})}/></Field></div>
       <div className={styles.securityNote}><Icon name="shield"/><span><strong>Không lưu khóa vào trình duyệt.</strong> Khi đóng hoặc tải lại tab, bạn cần nhập lại. Bản production nên cấu hình khóa tại Vercel Environment Variables hoặc kho bí mật phía máy chủ.</span></div>
@@ -451,17 +463,19 @@ export default function FinanceWorkflow() {
     </Section></div>
 
     <div id="step-3"><Section number="02" title="Phát triển kịch bản" subtitle="Tạo 3 hướng tiếp cận, chỉnh sửa toàn văn và rà soát độ tin cậy trước khi sản xuất." state={scriptApproved ? "Đã duyệt kịch bản" : undefined}>
+      <div className={styles.durationSetup}><div><strong>Thời lượng video mục tiêu</strong><small>Kịch bản và video nguồn sẽ cùng dùng mốc này.</small></div><select aria-label="Thời lượng video mục tiêu" value={avatar.duration} onChange={(event)=>{setAvatar({...avatar,duration:Number(event.target.value)});setScripts([]);setSelectedScriptId("");setScriptApproved(false);}}>{[30,45,55,60,90].map((value)=><option key={value} value={value}>{value} giây{value===55?" · đề xuất":""}</option>)}</select></div>
       <div className={styles.horizontalTabs}><button className={scriptMode==="write"?styles.selected:""} onClick={()=>setScriptMode("write")}>Viết kịch bản</button><button className={scriptMode==="import"?styles.selected:""} onClick={()=>setScriptMode("import")}>Nhập kịch bản có sẵn</button></div>
       {scriptMode === "write" && <div className={styles.scriptQueue}>{researchApproved ? selectedVideos.map((video)=>{const sourceScripts=scripts.filter((item)=>item.sourceId===video.id);const ready=sourceScripts.length===3&&sourceScripts.every(validScriptCandidate);return <article key={video.id} className={scriptSourceId===video.id?styles.queueActive:""}><div><small>{PLATFORM_LABELS[video.platform] || video.platform}</small><strong>{video.title}</strong><span>{video.channel}</span></div><button className={ready?styles.secondary:styles.primary} onClick={()=>{setScriptSourceId(video.id);if(ready){setSelectedScriptId(sourceScripts[0]?.id||"");}else generateScripts(video);}} disabled={busy==="script"}>{busy==="script"&&scriptSourceId===video.id?"Đang tạo...":ready?"Xem 3 kịch bản":sourceScripts.length?"Tạo lại 3 kịch bản":"Tạo 3 kịch bản"}</button></article>}) : <div className={styles.empty}>Chưa có video trong hàng đợi. Hãy chọn video ở bước Nghiên cứu.</div>}</div>}
       {scriptMode === "import" && <div className={styles.importBox}><Field label="Kịch bản có sẵn"><textarea rows="10" placeholder="Dán toàn bộ kịch bản của bạn vào đây…" value={importedScript} onChange={(event)=>setImportedScript(event.target.value)}/></Field><button className={styles.primary} onClick={useImportedScript}>Sử dụng kịch bản này</button></div>}
       {visibleScripts.length > 0 && <div className={styles.scriptTabs}>{visibleScripts.map((item,index) => <button key={item.id} aria-pressed={selectedScript?.id === item.id} className={selectedScript?.id === item.id ? styles.selected : ""} onClick={() => { setSelectedScriptId(item.id); setScriptApproved(false); }}><small>Phương án {index+1}</small><strong>{item.angle}</strong><span>{item.hook}</span></button>)}</div>}
       {selectedScript && <div className={styles.scriptEditor}><div><Field label="Mở đầu · 0–3 giây"><textarea rows="2" value={selectedScript.hook} onChange={(event) => updateScript("hook", event.target.value)}/></Field><Field label="Nội dung chính"><textarea rows="8" value={selectedScript.body} onChange={(event) => updateScript("body", event.target.value)}/></Field><Field label="Kêu gọi hành động"><textarea rows="2" value={selectedScript.cta} onChange={(event) => updateScript("cta", event.target.value)}/></Field></div><aside><h3>Phân tích sáng tạo</h3>{Object.entries(selectedScript.analysis || {}).map(([key,value]) => <div key={key}><strong>{key}</strong><p>{value}</p></div>)}<h3>Rà soát nội dung</h3>{(selectedScript.claimCheck || []).map((item,index) => <div className={item.level === "warning" ? styles.claimWarning : styles.claimOk} key={`${item.rule}-${index}`}><strong>{item.level === "warning" ? "Cần xem lại" : "Đã kiểm tra"}</strong><p>{item.label}</p></div>)}</aside></div>}
-      {selectedScript && <label className={styles.approval}><input type="checkbox" checked={scriptApproved} onChange={(event) => setScriptApproved(event.target.checked)}/><span><strong>Duyệt kịch bản đang mở</strong><small>Kịch bản được duyệt sẽ dùng để tạo và dựng video.</small></span></label>}
+      {selectedTiming && <div className={`${styles.scriptTiming} ${selectedTiming.onTarget ? styles.timingOk : styles.timingWarning}`} role="status"><strong>{selectedTiming.tokenCount} từ · ước tính {selectedTiming.estimatedSeconds} giây</strong><span>{selectedTiming.onTarget ? `Phù hợp mục tiêu ${avatar.duration} giây.` : `Chưa sát mục tiêu ${avatar.duration} giây; nên chỉnh độ dài trước khi duyệt.`}</span></div>}
+      {selectedScript && <label className={styles.approval}><input type="checkbox" checked={scriptApproved} disabled={!selectedTiming?.onTarget} onChange={(event) => setScriptApproved(event.target.checked)}/><span><strong>Duyệt kịch bản đang mở</strong><small>{selectedTiming?.onTarget ? "Kịch bản được duyệt sẽ dùng để tạo và dựng video." : "Hãy chỉnh kịch bản về gần " + avatar.duration + " giây trước khi duyệt để video nguồn không bị lệch thời lượng."}</small></span></label>}
     </Section></div>
 
     <div id="step-4"><Section number="03" title="Tạo video nguồn" subtitle="Chọn AI Avatar, video không lộ mặt hoặc tải lên footage bạn đã quay." state={sourceArtifact ? "Video đã chuẩn bị" : undefined}>
       <div className={styles.modeGrid}>{[["avatar","Video HeyGen Avatar","Người dẫn AI theo thương hiệu"],["noface","Video No-face","Giọng đọc và hình ảnh minh họa"],["upload","Upload video gốc có sẵn","Dựng lại từ footage của bạn"]].map(([id,name,desc]) => <button key={id} className={sourceRoute === id ? styles.selected : ""} onClick={() => { setSourceRoute(id); setSourceArtifact(null); }}><strong>{name}</strong><span>{desc}</span></button>)}</div>
-      {sourceRoute === "avatar" && <><Status tone={localAgent.online && localAgent.heygen ? "info" : "warning"}>{!localAgent.checked ? "Đang kiểm tra local-agent..." : localAgent.online && localAgent.heygen ? `HeyGen Photo Avatar III và local-agent đã sẵn sàng${localAgent.defaults.voiceConfigured && localAgent.defaults.avatarConfigured ? " · Có Voice/Avatar mặc định trong .env.local" : ""}. Không tự chuyển sang Avatar IV nếu tài khoản không hỗ trợ.` : "Local-agent chưa chạy hoặc chưa đọc được HEYGEN_API_KEY. Hãy khởi động bằng npm run dev:full."}</Status><div className={styles.formGrid}><Field label="HeyGen Voice ID" help="Có thể để trống nếu HEYGEN_VOICE_ID đã có trong .env.local."><input placeholder="Dùng mặc định từ .env.local" value={avatar.voiceId} onChange={(event) => setAvatar({ ...avatar, voiceId: event.target.value })}/></Field><Field label="Photo Avatar III IDs — phân cách bằng dấu phẩy hoặc xuống dòng" help="Chỉ dùng Photo Avatar III; không tự fallback sang engine khác."><textarea rows="2" placeholder="Dùng mặc định từ .env.local" value={avatar.avatarIds} onChange={(event) => setAvatar({ ...avatar, avatarIds: event.target.value })}/></Field><Field label="Thời lượng mục tiêu"><select value={avatar.duration} onChange={(event)=>setAvatar({...avatar,duration:Number(event.target.value)})}>{[30,45,55,60,90].map((value)=><option key={value} value={value}>{value} giây{value===55?" · đề xuất":""}</option>)}</select></Field><Field label="Voice speed"><input type="number" min="0.5" max="1.5" step="0.05" value={avatar.speed} onChange={(event) => setAvatar({ ...avatar, speed: event.target.value })}/></Field><label className={styles.checkCard}><input type="checkbox" checked={avatar.test} onChange={(event) => setAvatar({ ...avatar, test: event.target.checked })}/><span><strong>HeyGen test mode</strong><small>Ưu tiên bản test trước production.</small></span></label><label className={styles.checkCard}><input type="checkbox" checked={avatar.costConfirmed} onChange={(event) => setAvatar({ ...avatar, costConfirmed: event.target.checked })}/><span><strong>Tôi hiểu tác vụ có thể dùng credit</strong><small>Khi bấm tạo video, hệ thống vẫn hỏi xác nhận lần cuối.</small></span></label><label className={styles.checkCard}><input type="checkbox" checked={avatar.notify} onChange={async(event)=>{const checked=event.target.checked;setAvatar({...avatar,notify:checked});if(checked&&typeof Notification!=="undefined"&&Notification.permission==="default")await Notification.requestPermission();}}/><span><strong>Thông báo khi HeyGen xong</strong><small>Hiển thị thông báo trình duyệt nếu bạn cho phép.</small></span></label></div></>}
+      {sourceRoute === "avatar" && <><Status tone={localAgent.online && localAgent.heygen ? "info" : "warning"}>{!localAgent.checked ? "Đang kiểm tra local-agent..." : localAgent.online && localAgent.heygen ? `HeyGen Photo Avatar III và local-agent đã sẵn sàng${localAgent.defaults.voiceConfigured && localAgent.defaults.avatarConfigured ? " · Có Voice/Avatar mặc định trong .env.local" : ""}. Không tự chuyển sang Avatar IV nếu tài khoản không hỗ trợ.` : "Local-agent chưa chạy hoặc chưa đọc được HEYGEN_API_KEY. Hãy khởi động bằng npm run dev:full."}</Status><div className={styles.formGrid}><Field label="HeyGen Voice ID" help="Có thể để trống nếu HEYGEN_VOICE_ID đã có trong .env.local."><input placeholder="Dùng mặc định từ .env.local" value={avatar.voiceId} onChange={(event) => setAvatar({ ...avatar, voiceId: event.target.value })}/></Field><Field label="Photo Avatar III IDs — phân cách bằng dấu phẩy hoặc xuống dòng" help="Chỉ dùng Photo Avatar III; không tự fallback sang engine khác."><textarea rows="2" placeholder="Dùng mặc định từ .env.local" value={avatar.avatarIds} onChange={(event) => setAvatar({ ...avatar, avatarIds: event.target.value })}/></Field><Field label="Voice speed"><input type="number" min="0.5" max="1.5" step="0.05" value={avatar.speed} onChange={(event) => setAvatar({ ...avatar, speed: event.target.value })}/></Field><label className={styles.checkCard}><input type="checkbox" checked={avatar.test} onChange={(event) => setAvatar({ ...avatar, test: event.target.checked })}/><span><strong>HeyGen test mode</strong><small>Ưu tiên bản test trước production.</small></span></label><label className={styles.checkCard}><input type="checkbox" checked={avatar.costConfirmed} onChange={(event) => setAvatar({ ...avatar, costConfirmed: event.target.checked })}/><span><strong>Tôi hiểu tác vụ có thể dùng credit</strong><small>Khi bấm tạo video, hệ thống vẫn hỏi xác nhận lần cuối.</small></span></label><label className={styles.checkCard}><input type="checkbox" checked={avatar.notify} onChange={async(event)=>{const checked=event.target.checked;setAvatar({...avatar,notify:checked});if(checked&&typeof Notification!=="undefined"&&Notification.permission==="default")await Notification.requestPermission();}}/><span><strong>Thông báo khi HeyGen xong</strong><small>Hiển thị thông báo trình duyệt nếu bạn cho phép.</small></span></label></div></>}
       {sourceRoute === "noface" && <div className={styles.formGrid}><Field label="Nguồn giọng"><select value={noface.voiceSource} onChange={(event) => {setNoface({ ...noface, voiceSource: event.target.value });setVoiceUpload(null);}}><option value="tts">Giọng AI</option><option value="recorded">Voice thu sẵn</option><option value="approved-audio">Audio đã duyệt</option></select></Field>{noface.voiceSource !== "tts" && <Field label="Tải tệp giọng đọc"><input type="file" accept="audio/*" onChange={(event)=>setVoiceUpload(event.target.files?.[0] || null)}/>{voiceUpload&&<small>{voiceUpload.name} · {(voiceUpload.size/1024/1024).toFixed(1)} MB</small>}</Field>}</div>}
       {sourceRoute === "upload" && <Field label="Chọn video nguồn"><input type="file" accept="video/*" onChange={(event) => { const file = event.target.files?.[0]; setSourceFile(file || null); setUpload(file ? { name: file.name, size: file.size, type: file.type, lastModified: file.lastModified } : null); setSourceArtifact(null); }}/>{upload && <small>{upload.name} · {(upload.size / 1024 / 1024).toFixed(1)} MB</small>}</Field>}
       <div className={styles.actionRow}><span>{sourceArtifact?.status === "ready" ? "Video nguồn đã sẵn sàng" : sourceArtifact ? "Tác vụ video đã được tạo" : "Chưa chuẩn bị video nguồn"}</span><button className={styles.primary} onClick={createSourceArtifact} disabled={videoTask || (!scriptApproved && entryMode !== "edit" && entryMode !== "publish")}>{videoTask && videoTask !== "editing" ? videoTaskLabel : sourceRoute === "avatar" ? "Tạo video HeyGen" : "Chuẩn bị video"}</button></div>
@@ -470,21 +484,13 @@ export default function FinanceWorkflow() {
     </Section></div>
 
     <div id="step-5"><Section number="04" title="Chọn phong cách dựng" subtitle="Cá nhân hóa nhịp cắt, phụ đề, chuyển cảnh và hình ảnh minh họa theo dấu ấn thương hiệu." state={editPlan ? `Phiên bản ${editPlan.version}` : undefined}>
-      <div className={styles.styleGrid}>{editStyles.map((item) => <button key={item.id} className={styleId === item.id ? styles.selected : ""} onClick={() => { setStyleId(item.id); setEditPlan(null); }}><div>{item.palette.map((color) => <i key={color} style={{ background: color }}/>)}</div><strong>{item.name}{domain.defaultStyle === item.id && <small>Đề xuất</small>}</strong><span>{item.bestFor}</span><p>{item.description}</p></button>)}</div>
-      <div className={styles.overlayEditor}>
-        <header><div><small>FINANCE EDITORIAL TRAINING PACK</small><h3>Thiết lập Text Overlay</h3><p>Kicker nhỏ màu nhấn + headline Montserrat ExtraBold trên nền tối, ưu tiên các beat proof/metaphor và không che hook/CTA.</p></div><label className={styles.overlayToggle}><input type="checkbox" checked={textOverlay.enabled} onChange={(event)=>setTextOverlay({...textOverlay,enabled:event.target.checked})}/><span>{textOverlay.enabled ? "Đang bật" : "Đã tắt"}</span></label></header>
-        {textOverlay.enabled && <><div className={styles.overlayGrid}>
-          <Field label="Kicker nhỏ"><input value={textOverlay.kicker} maxLength="60" placeholder="ĐIỂM CẦN NHỚ" onChange={(event)=>setTextOverlay({...textOverlay,kicker:event.target.value})}/></Field>
-          <Field label="Vị trí"><select value={textOverlay.position} onChange={(event)=>setTextOverlay({...textOverlay,position:event.target.value})}><option value="top">Phía trên · giống mẫu Finance</option><option value="middle">Giữa khung hình</option><option value="lower">Phía dưới · trên vùng subtitle</option></select></Field>
-          <Field label="Căn chữ"><select value={textOverlay.align} onChange={(event)=>setTextOverlay({...textOverlay,align:event.target.value})}><option value="left">Căn trái · giống mẫu Finance</option><option value="center">Căn giữa</option><option value="right">Căn phải</option></select></Field>
-          <Field label={`Cỡ headline · ${textOverlay.fontSize}px`}><input type="range" min="42" max="96" step="2" value={textOverlay.fontSize} onChange={(event)=>setTextOverlay({...textOverlay,fontSize:Number(event.target.value)})}/></Field>
-          <Field label={`Ký tự tối đa mỗi dòng · ${textOverlay.maxCharsPerLine}`}><input type="range" min="12" max="34" step="1" value={textOverlay.maxCharsPerLine} onChange={(event)=>setTextOverlay({...textOverlay,maxCharsPerLine:Number(event.target.value)})}/></Field>
-          <Field label={`Độ đậm nền · ${Math.round(textOverlay.backgroundOpacity*100)}%`}><input type="range" min="0.2" max="0.95" step="0.05" value={textOverlay.backgroundOpacity} onChange={(event)=>setTextOverlay({...textOverlay,backgroundOpacity:Number(event.target.value)})}/></Field>
-        </div><div className={styles.overlayColors}><label><span>Màu headline</span><input type="color" value={textOverlay.textColor} onChange={(event)=>setTextOverlay({...textOverlay,textColor:event.target.value})}/></label><label><span>Màu nhấn/kicker</span><input type="color" value={textOverlay.accentColor} onChange={(event)=>setTextOverlay({...textOverlay,accentColor:event.target.value})}/></label><label><span>Màu nền</span><input type="color" value={textOverlay.backgroundColor} onChange={(event)=>setTextOverlay({...textOverlay,backgroundColor:event.target.value})}/></label><label><input type="checkbox" checked={textOverlay.uppercase} onChange={(event)=>setTextOverlay({...textOverlay,uppercase:event.target.checked})}/><span>Viết hoa headline</span></label><label><input type="checkbox" checked={textOverlay.accentStripe} onChange={(event)=>setTextOverlay({...textOverlay,accentStripe:event.target.checked})}/><span>Thêm vạch nhấn trái</span></label></div>
-        <div className={styles.overlayCopy}><Field label="Headline tùy chỉnh — mỗi dòng ứng với một beat proof/metaphor" help="Để trống thì agent tự rút tối đa 10 từ từ lời thoại. Không nên lặp nguyên subtitle."><textarea rows="5" placeholder={"VÌ SAO GIÁ VÀNG GIẢM?\nBA TÍN HIỆU CẦN THEO DÕI"} value={textOverlay.lines} onChange={(event)=>setTextOverlay({...textOverlay,lines:event.target.value})}/></Field><button className={styles.secondary} onClick={()=>setTextOverlay({...textOverlay,lines:overlaySuggestions(selectedScript)})} disabled={!selectedScript}>Lấy gợi ý từ kịch bản</button></div></>}
-      </div>
+      <div className={styles.styleGrid}>{editStyles.map((item) => <button key={item.id} className={styleId === item.id ? styles.selected : ""} onClick={() => { setStyleId(item.id); setEditPlan(null); setEditRun(EMPTY_EDIT_RUN); }} disabled={videoTask === "editing"}><div>{item.palette.map((color) => <i key={color} style={{ background: color }}/>)}</div><strong>{item.name}{domain.defaultStyle === item.id && <small>Đề xuất</small>}</strong><span>{item.bestFor}</span><p>{item.description}</p></button>)}</div>
       <div className={styles.actionRow}><span>{entryMode === "publish" ? "Bản hoàn chỉnh không cần dựng lại" : `${selectedStyle.cutRhythm} · ${selectedStyle.caption}`}</span><button className={styles.primary} onClick={() => createEditPlan(1)} disabled={entryMode === "publish" || !sourceArtifact || Boolean(busy)}>{busy === "edit" ? "Đang dựng video..." : "Dựng video hoàn chỉnh"}</button></div>
-      {videoTask === "editing" && <div className={styles.inlineJob}><span className={styles.spinner}/><div><strong>{taskMessage || "Đang edit..."}</strong><small>Đã chạy {elapsedLabel(elapsedSeconds)} · Video sẽ tự xuất hiện khi file MP4 hoàn thành.</small></div></div>}
+      {editRun.status !== "idle" && <div className={`${styles.editJob} ${editRun.status === "error" ? styles.editJobError : editRun.status === "done" ? styles.editJobDone : ""}`} role={editRun.status === "error" ? "alert" : "status"} aria-live="polite" aria-busy={editRun.status === "running"}>
+        <div className={styles.editJobHead}>{editRun.status === "running" ? <span className={styles.spinner}/> : <Icon name="check"/>}<div><strong>{editRun.status === "done" ? "Video đã dựng xong" : editRun.status === "error" ? "Dựng video tạm dừng" : editRun.message || "Đang dựng video..."}</strong><small>{editRun.status === "running" ? `Đã chạy ${elapsedLabel(elapsedSeconds)} · ${Math.round(editRun.progress)}%` : editRun.message}</small></div>{editRun.status === "error" && <button className={styles.secondary} onClick={() => createEditPlan(editPlan?.version || 1)} disabled={Boolean(busy)}>Thử dựng lại</button>}</div>
+        <div className={styles.editProgress} aria-label={`Tiến độ dựng video ${Math.round(editRun.progress)}%`}><i style={{width:`${Math.max(0,Math.min(100,editRun.progress))}%`}}/></div>
+        <div className={styles.editPhases}>{EDIT_PHASES.map((phase,index)=>{const previous=index===0?0:EDIT_PHASES[index-1].doneAt;const complete=editRun.progress>=phase.doneAt;const active=editRun.status==="running"&&editRun.progress>=previous&&editRun.progress<phase.doneAt;return <span key={phase.label} className={complete?styles.phaseDone:active?styles.phaseActive:""}><i>{complete?<Icon name="check"/>:index+1}</i>{phase.label}</span>})}</div>
+      </div>}
       {editPlan && <div className={styles.beats}>{editPlan.beats.map((beat) => <article key={beat.id}><span>{beat.start}s–{beat.end}s</span><strong>{beat.visualRole} · {beat.assetSource}</strong><p>{beat.spokenMeaning}</p><small>{beat.cutReason || `${beat.captionTreatment} · ${beat.textEffect} · ${beat.transition}`}</small>{beat.stockProviders?.length > 0 && <small>Nguồn dự phòng: {beat.stockProviders.join(" → ")}</small>}</article>)}</div>}
       {editPlan && <div className={styles.feedback}><Field label="Feedback sau preview"><textarea rows="3" placeholder="VD: 00:12 chữ nhỏ; đổi chart; giảm nhạc nền..." value={feedbackText} onChange={(event) => setFeedbackText(event.target.value)}/></Field><button className={styles.secondary} onClick={submitFeedback}>Gửi feedback & tạo version mới</button>{feedback.map((item) => <p key={`${item.version}-${item.createdAt}`}><strong>V{item.version}</strong> · {item.text}</p>)}</div>}
     </Section></div>

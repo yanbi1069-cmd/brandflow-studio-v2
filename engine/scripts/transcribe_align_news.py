@@ -80,36 +80,59 @@ def transcribe_words(audio_path: str, model_name: str = "base"):
 
 
 def align_phrases(words, phrases):
+    if not words:
+        raise RuntimeError("Không nhận diện được lời nói trong video nguồn.")
     aligned = []
     cursor = 0
     previous_end = 0.0
-    for phrase in phrases:
+    expected_counts = [max(1, len(normalize(item["spoken"]).split())) for item in phrases]
+    for phrase_index, phrase in enumerate(phrases):
         target_tokens = normalize(phrase["spoken"]).split()
         target_text = " ".join(target_tokens)
-        expected = len(target_tokens)
+        expected = max(1, len(target_tokens))
         best_start = cursor
         best_end = min(len(words), cursor + expected)
         best_score = -1.0
-        max_start = min(len(words) - 1, cursor + 14)
-        for candidate_start in range(cursor, max_start + 1):
-            min_end = min(len(words), candidate_start + max(1, expected - 8))
-            max_end = min(len(words), candidate_start + expected + 10)
-            for candidate_end in range(min_end, max_end + 1):
-                candidate_text = " ".join(word["token"] for word in words[candidate_start:candidate_end])
-                score = SequenceMatcher(None, target_text, candidate_text).ratio()
-                if score > best_score:
-                    best_score = score
-                    best_start = candidate_start
-                    best_end = candidate_end
-        if cursor >= len(words) or best_end <= best_start:
-            raise RuntimeError(f"Could not align phrase: {phrase['display']}")
-        start = max(words[best_start]["start"], previous_end + 0.07)
-        end = max(start + 0.45, words[best_end - 1]["end"] - 0.07)
+        phrases_after = len(phrases) - phrase_index - 1
+        if cursor < len(words):
+            end_limit = max(cursor + 1, len(words) - phrases_after)
+            max_start = min(end_limit - 1, cursor + 14)
+            for candidate_start in range(cursor, max_start + 1):
+                min_end = min(end_limit, candidate_start + max(1, expected - 8))
+                max_end = min(end_limit, candidate_start + expected + 10)
+                for candidate_end in range(min_end, max_end + 1):
+                    candidate_text = " ".join(word["token"] for word in words[candidate_start:candidate_end])
+                    score = SequenceMatcher(None, target_text, candidate_text).ratio()
+                    if score > best_score:
+                        best_score = score
+                        best_start = candidate_start
+                        best_end = candidate_end
+
+        alignment_mode = "matched"
+        if cursor >= len(words):
+            alignment_mode = "proportional"
+            best_score = 0.0
+            end = words[-1]["end"]
+            start = max(0.0, end - 0.45)
+            best_end = cursor
+        else:
+            if best_end <= best_start or best_score < 0.5:
+                alignment_mode = "proportional"
+                available = len(words) - cursor
+                reserve = min(phrases_after, max(0, available - 1))
+                remaining_expected = sum(expected_counts[phrase_index:])
+                proportional_take = round(available * expected / max(1, remaining_expected))
+                take = max(1, min(max(1, available - reserve), proportional_take))
+                best_start = cursor
+                best_end = min(len(words), cursor + take)
+            start = max(words[best_start]["start"], previous_end + 0.07)
+            end = max(start + 0.45, words[best_end - 1]["end"] - 0.07)
         aligned.append({
             "start": round(start, 3),
             "end": round(end, 3),
             "text": phrase["display"],
-            "match_score": round(best_score, 3),
+            "match_score": round(max(0.0, best_score), 3),
+            "alignment_mode": alignment_mode,
         })
         previous_end = end
         cursor = best_end
@@ -141,7 +164,10 @@ def main():
     Path(output_json).write_text(json.dumps(aligned, ensure_ascii=False, indent=2), encoding="utf-8")
     write_ass(aligned, output_ass)
     print(f"Aligned {len(aligned)} subtitle phrases")
-    print(f"Minimum match score: {min(item['match_score'] for item in aligned):.3f}")
+    print(f"Minimum match score: {min((item['match_score'] for item in aligned), default=0):.3f}")
+    fallback_count = sum(item["alignment_mode"] == "proportional" for item in aligned)
+    if fallback_count:
+        print(f"Used proportional timing fallback for {fallback_count} phrase(s)")
 
 
 if __name__ == "__main__":
