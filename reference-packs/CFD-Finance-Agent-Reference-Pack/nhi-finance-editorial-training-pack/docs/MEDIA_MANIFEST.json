@@ -1,0 +1,39 @@
+{
+  "provider": "pexels",
+  "license": "Pexels License",
+  "avatar_windows": [
+    { "start_s": 0.0, "end_s": 3.6 },
+    { "start_s": 35.6, "end_s": 39.404 }
+  ],
+  "scene_time_s": 32.0,
+  "broll_coverage_s": 2.9,
+  "broll_ratio_of_non_avatar": 0.090625,
+  "assets": [
+    {
+      "file": "media/broll_ebook.mp4",
+      "provider_asset_id": "8731290",
+      "query": "reading ebook tablet at desk",
+      "direct_url": "https://videos.pexels.com/video-files/8731290/8731290-sd_540_960_25fps.mp4",
+      "sha256": "978226e01dcbbd5caec898078932c7c941a33843fa31b7aaae7b989530586013",
+      "usage": "broll-fullscreen",
+      "placement": { "start_s": 6.5, "duration_s": 2.9, "source_start_s": 1.0 }
+    }
+  ],
+  "unused": [
+    {
+      "file": "media/broll_multitimeframe.mp4",
+      "provider_asset_id": "33402723",
+      "reason": "Removed from the D1/H4 beat so the technical timeframe ladder remains uninterrupted until its proof state."
+    },
+    {
+      "file": "media/broll_analysis.mp4",
+      "provider_asset_id": "7579575",
+      "reason": "Removed from the H1 voice beat so the technical branch graphic remains visible for the full explanation."
+    },
+    {
+      "file": "media/broll_entry.mp4",
+      "provider_asset_id": "34573351",
+      "reason": "Removed from the M15/M5 voice beat so the technical signal graphic remains visible for the full explanation."
+    }
+  ]
+}

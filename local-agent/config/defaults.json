@@ -1,0 +1,25 @@
+{
+  "brand": {
+    "name": "Personal Brand",
+    "handle": "@yourhandle",
+    "language": "vi",
+    "audience": "Khách hàng mục tiêu của thương hiệu",
+    "cta": "Theo dõi kênh để xem thêm nội dung thực hành.",
+    "disclaimer": "Áp dụng disclaimer theo domain pack đã chọn."
+  },
+  "video": {
+    "width": 1080,
+    "height": 1920,
+    "max_seconds": 60,
+    "speed": 1.0
+  },
+  "research": {
+    "provider": "yt-dlp",
+    "max_videos_per_channel": 20,
+    "lookback_days": 180
+  },
+  "publishing": {
+    "default_mode": "skip",
+    "profile": "cong"
+  }
+}

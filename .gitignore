@@ -1,0 +1,32 @@
+.next/
+node_modules/
+.vercel/
+
+# Local secrets. Only sanitized templates may be committed.
+.env
+.env.local
+.env.*
+!.env.example
+!**/.env.example
+local-agent/.env
+local-agent/.env.local
+
+# Local jobs, caches and generated artifacts.
+local-agent/workspace/
+workspace/
+engine/.stock-cache/
+**/generated/
+**/__pycache__/
+*.py[cod]
+*.log
+
+# Rendered/source media stays local and outside Git.
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.webm
+*.wav
+*.mp3
+*.m4a
+

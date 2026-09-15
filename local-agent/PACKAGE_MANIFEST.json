@@ -1,0 +1,23 @@
+{
+  "name": "personal-brand-video-agent-multi-niche",
+  "version": "1.0.1",
+  "entrypoints": {
+    "windows": "start-agent.cmd",
+    "python": "start_agent.py",
+    "url": "http://127.0.0.1:8765/"
+  },
+  "capabilities": [
+    "competitor-research-facebook-tiktok-youtube",
+    "industry-and-keyword-filtering",
+    "three-editable-script-candidates",
+    "heygen-multi-look",
+    "no-face-plan",
+    "source-video-upload",
+    "finance-compatible-multi-style-edit-handoff",
+    "revision-feedback",
+    "final-video-preview-and-download",
+    "optional-publishing-with-skip"
+  ],
+  "bundled_skill": "../.Codex/skills/multi-niche-brand-video-agent",
+  "default_editorial_training_pack": "../reference-packs/CFD-Finance-Agent-Reference-Pack/nhi-finance-editorial-training-pack"
+}

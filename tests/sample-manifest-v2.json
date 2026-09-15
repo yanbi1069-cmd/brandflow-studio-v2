@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "2.0",
+  "createdAt": "2026-09-13T00:00:00.000Z",
+  "project": {"id":"BF2-TEST","brand":{"name":"SFI Academy"},"niche":"tài chính và đầu tư","domainPackId":"finance","contentFormatId":"evidence-explainer","format":"vertical-9:16","targetDurationSec":55},
+  "domainPack": {"id":"finance","proofTypes":["chart","calculation","official-source"],"compliance":["Không cam kết lợi nhuận","Không đưa chỉ dẫn mua bán"],"disclaimer":"Nội dung mang tính giáo dục, không phải khuyến nghị đầu tư."},
+  "contentFormat": {"id":"evidence-explainer","structure":["hook","cơ chế","bằng chứng","hành động"]},
+  "source": null,
+  "script": {"hook":"Một hook đủ rõ để kiểm thử.","body":"Một phần nội dung đủ rõ, có cơ chế và bằng chứng để kiểm thử manifest.","cta":"Lưu lại để áp dụng."},
+  "production": {"videoMode":"avatar","editStyle":{"id":"editorial-proof"},"recommendedStyleIds":["editorial-proof"]},
+  "approvals": {"researchApproved":false,"scriptApproved":false,"externalCostConfirmed":false,"finalApproved":false,"publishingConfirmed":false},
+  "qa": {"captionSafeArea":true,"maxCaptionLines":2,"requireNoFlashFrames":true,"requireVoiceAlignment":true,"requireSourceTraceability":true,"requireFullWatch":true,"maxDurationSec":60},
+  "distribution": {"defaultAction":"skip"}
+}

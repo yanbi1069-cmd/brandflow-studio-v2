@@ -1,0 +1,52 @@
+[
+  {
+    "id": "editorial-proof",
+    "name": "Editorial Proof",
+    "bestFor": "Tài chính, giáo dục, chuyên gia",
+    "description": "Talking-head kết hợp chart và sơ đồ chứng minh từng luận điểm.",
+    "palette": ["#0B1320", "#F5B83D", "#F7F4EC"],
+    "cutRhythm": "semantic",
+    "caption": "phrase-highlight",
+    "brollPriority": ["technical-proof", "owned-assets", "real-world"]
+  },
+  {
+    "id": "clean-expert",
+    "name": "Clean Expert",
+    "bestFor": "Coach, tư vấn, đào tạo",
+    "description": "Tối giản, nhiều khoảng thở, typography rõ và chuyển cảnh tiết chế.",
+    "palette": ["#12211B", "#B9E6C9", "#F7FAF8"],
+    "cutRhythm": "calm",
+    "caption": "clean-two-line",
+    "brollPriority": ["owned-assets", "diagram", "real-world"]
+  },
+  {
+    "id": "warm-story",
+    "name": "Warm Story",
+    "bestFor": "Lifestyle, F&B, dịch vụ",
+    "description": "Nhịp kể chuyện ấm, B-roll đời thường và texture mềm.",
+    "palette": ["#2A1713", "#F29E72", "#FFF2E6"],
+    "cutRhythm": "narrative",
+    "caption": "soft-card",
+    "brollPriority": ["owned-assets", "real-world", "diagram"]
+  },
+  {
+    "id": "luxury-minimal",
+    "name": "Luxury Minimal",
+    "bestFor": "Spa, thẩm mỹ, bất động sản",
+    "description": "Tương phản sang, chuyển động chậm và hình ảnh toàn màn hình.",
+    "palette": ["#171512", "#C9A66B", "#F8F4EB"],
+    "cutRhythm": "slow-premium",
+    "caption": "serif-accent",
+    "brollPriority": ["owned-assets", "real-world", "motion-type"]
+  },
+  {
+    "id": "bold-social",
+    "name": "Bold Social",
+    "bestFor": "Founder trẻ, sản phẩm số, bán hàng",
+    "description": "Hook mạnh, kinetic type có kiểm soát và nhịp dựng nhanh.",
+    "palette": ["#101013", "#FF5C35", "#F7F7F2"],
+    "cutRhythm": "fast-semantic",
+    "caption": "kinetic-keyword",
+    "brollPriority": ["motion-type", "owned-assets", "real-world"]
+  }
+]

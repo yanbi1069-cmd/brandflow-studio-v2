@@ -1,0 +1,26 @@
+{
+  "brand": {
+    "name": "CFD Finance Brand",
+    "handle": "@yourhandle",
+    "language": "vi",
+    "audience": "Người quan tâm CFD, trading và tài chính",
+    "cta": "Theo dõi kênh để xem thêm nội dung thực hành.",
+    "disclaimer": "Nội dung mang tính giáo dục, không phải khuyến nghị đầu tư."
+  },
+  "video": {
+    "width": 720,
+    "height": 1280,
+    "max_seconds": 60,
+    "speed": 1.0
+  },
+  "research": {
+    "provider": "yt-dlp",
+    "max_videos_per_channel": 20,
+    "lookback_days": 180
+  },
+  "publishing": {
+    "default_mode": "skip",
+    "profile": "cong"
+  }
+}
+

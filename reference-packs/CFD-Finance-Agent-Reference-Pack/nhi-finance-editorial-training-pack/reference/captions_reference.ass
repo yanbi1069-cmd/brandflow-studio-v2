@@ -1,0 +1,28 @@
+﻿[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+ScaledBorderAndShadow: yes
+WrapStyle: 2
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Caption,Montserrat ExtraBold,58,&H00FFFFFF,&H00FFFFFF,&H00101010,&H00000000,-1,0,0,0,100,100,0,0,1,6,2,2,64,64,195,1
+Style: BrollKicker,Montserrat SemiBold,30,&H0036FFB6,&H0036FFB6,&H00101010,&H90060B16,0,0,0,0,100,100,1,0,3,2,0,7,74,74,0,1
+Style: BrollTitle,Montserrat ExtraBold,62,&H00FFFFFF,&H00FFFFFF,&H00101010,&H90060B16,-1,0,0,0,100,100,0,0,3,3,0,7,74,74,0,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:03.60,Caption,,0,0,0,,{\fad(90,90)}Bạn trade trên {\c&H0036FFB6&}khung 5 phút{\c&H00FFFFFF&}\Nnhưng {\c&H0036FFB6&}khung 4 giờ{\c&H00FFFFFF&} đang giảm mạnh
+Dialogue: 0,0:00:03.60,0:00:05.70,Caption,,0,0,0,,{\fad(90,90)}Đó là lý do lệnh vừa vào\Nđã {\c&H004D4DFF&}BỊ QUÉT{\c&H00FFFFFF&}
+Dialogue: 0,0:00:05.70,0:00:09.40,Caption,,0,0,0,,{\fad(90,90)}Comment {\c&H0036FFB6&}CHỈ BÁO{\c&H00FFFFFF&} để nhận ebook\Nvà bộ chỉ báo follow trend miễn phí
+Dialogue: 0,0:00:09.40,0:00:12.80,Caption,,0,0,0,,{\fad(90,90)}Hãy phân tích từ {\c&H0036FFB6&}khung thời gian lớn{\c&H00FFFFFF&}\Nxuống khung thời gian nhỏ
+Dialogue: 0,0:00:12.80,0:00:17.60,Caption,,0,0,0,,{\fad(90,90)}Dùng khung ngày hoặc H4 để xác định\N{\c&H0036FFB6&}xu hướng và vùng giá quan trọng{\c&H00FFFFFF&}
+Dialogue: 0,0:00:17.60,0:00:21.20,Caption,,0,0,0,,{\fad(90,90)}Chuyển xuống H1 để quan sát giá\Nđang {\c&H0036FFB6&}điều chỉnh hay tiếp diễn{\c&H00FFFFFF&}
+Dialogue: 0,0:00:21.20,0:00:24.70,Caption,,0,0,0,,{\fad(90,90)}Cuối cùng dùng M15 hoặc M5\Nđể tìm {\c&H0036FFB6&}tín hiệu vào lệnh{\c&H00FFFFFF&}
+Dialogue: 0,0:00:24.70,0:00:28.20,Caption,,0,0,0,,{\fad(90,90)}H4 đang tăng và giá điều chỉnh\Nvề {\c&H0036FFB6&}vùng hỗ trợ{\c&H00FFFFFF&}
+Dialogue: 0,0:00:28.20,0:00:31.90,Caption,,0,0,0,,{\fad(90,90)}Chờ giá phá cấu trúc giảm ngắn hạn\Nrồi mới tìm cơ hội {\c&H0036FFB6&}BUY{\c&H00FFFFFF&}
+Dialogue: 0,0:00:31.90,0:00:35.60,Caption,,0,0,0,,{\fad(90,90)}Khung lớn cho bạn {\c&H0036FFB6&}phương hướng{\c&H00FFFFFF&}\NKhung nhỏ cho bạn {\c&H0036FFB6&}điểm vào{\c&H00FFFFFF&}
+Dialogue: 0,0:00:35.60,0:00:39.40,Caption,,0,0,0,,{\fad(90,90)}Follow kênh để chọn điểm vào đẹp hơn\Nbằng {\c&H0036FFB6&}phân tích đa khung thời gian{\c&H00FFFFFF&}
+Dialogue: 1,0:00:06.68,0:00:09.22,BrollKicker,,0,0,0,,{\pos(74,92)\fad(120,120)}TÀI LIỆU THỰC HÀNH
+Dialogue: 1,0:00:06.68,0:00:09.22,BrollTitle,,0,0,0,,{\pos(74,145)\fad(120,120)}EBOOK + CHỈ BÁO

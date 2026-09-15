@@ -1,0 +1,9 @@
+.vercel
+.env*
+reference-packs/
+local-agent/
+archive/
+workspace/
+**/__pycache__/
+*.mp4
+*.wav

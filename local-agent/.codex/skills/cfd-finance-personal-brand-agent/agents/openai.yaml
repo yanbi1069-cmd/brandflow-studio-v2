@@ -1,0 +1,6 @@
+interface:
+  display_name: "CFD Finance Personal Brand Agent"
+  short_description: "Build CFD finance short-video workflows."
+  default_prompt: "Use $cfd-finance-personal-brand-agent to continue this CFD/finance short-video project from its current approval checkpoint."
+policy:
+  allow_implicit_invocation: true

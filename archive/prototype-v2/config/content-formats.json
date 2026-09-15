@@ -1,0 +1,10 @@
+[
+  {"id":"evidence-explainer","name":"Giải thích có bằng chứng","bestFor":"Chuyên môn khó, tài chính, sức khỏe","structure":["hook vấn đề","cơ chế","bằng chứng trực quan","hành động nhỏ","CTA mềm"]},
+  {"id":"observation-action","name":"Quan sát → Hành động","bestFor":"Xu hướng đang thay đổi","structure":["quan sát mới","tác động tới người xem","2-4 bước hành động","trấn an"]},
+  {"id":"challenge-reframe","name":"Phá hiểu lầm","bestFor":"Quan điểm trái chiều, giáo dục thị trường","structure":["niềm tin phổ biến","điểm chưa đúng","góc nhìn mới","ví dụ","CTA mềm"]},
+  {"id":"jenga-tension","name":"Jenga Tension","bestFor":"So sánh, giải đáp câu hỏi lớn","structure":["câu hỏi chính","micro-question 1","micro-question 2","micro-question 3","payoff"]},
+  {"id":"visual-metaphor","name":"Ẩn dụ trực quan","bestFor":"Khái niệm trừu tượng","structure":["gợi mở","gán vật thể","hành động vật lý","kết quả","liên hệ thực tế"]},
+  {"id":"untold-story","name":"Câu chuyện chưa kể","bestFor":"Chủ đề quen thuộc có góc khuất","structure":["lời hứa khám phá","bối cảnh quen","deep-cut","micro-reveal","payoff"]},
+  {"id":"case-study","name":"Case study nhanh","bestFor":"Dịch vụ, tư vấn, đào tạo","structure":["trước đây","điểm nghẽn","thay đổi","kết quả có điều kiện","bài học"]},
+  {"id":"product-demo","name":"Demo sản phẩm","bestFor":"Công nghệ, bán lẻ, công cụ","structure":["kết quả đầu tiên","tình huống","demo 3 bước","giới hạn","CTA"]}
+]

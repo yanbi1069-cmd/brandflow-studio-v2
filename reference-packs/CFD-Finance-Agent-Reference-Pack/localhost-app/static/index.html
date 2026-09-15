@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Local Agent xây dựng thương hiệu cá nhân CFD Trading Finance" />
+  <title>CFD Finance Local Agent</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23070b12'/%3E%3Cpath d='M12 44 23 32l9 7 19-22' fill='none' stroke='%23b8ff3d' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  <style>
+    :root {
+      --bg: #060911;
+      --panel: #0d1420;
+      --panel-2: #111b2a;
+      --line: #263244;
+      --ink: #f4f7ef;
+      --muted: #8d9bae;
+      --lime: #b6ff36;
+      --red: #ff5364;
+      --amber: #ffc857;
+      --blue: #55b8ff;
+      --radius: 18px;
+    }
+    * { box-sizing: border-box; }
+    html { background: var(--bg); }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 48% -10%, rgba(85,184,255,.14), transparent 31rem),
+        linear-gradient(180deg, #080d16 0%, var(--bg) 45%);
+      font: 16px/1.45 Inter, Montserrat, "Segoe UI", sans-serif;
+      min-height: 100vh;
+    }
+    button, select { font: inherit; }
+    button { cursor: pointer; }
+    .shell { min-height: 100vh; display: grid; grid-template-rows: auto 1fr; }
+    header {
+      min-height: 76px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 14px 24px;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+      background: rgba(6,9,17,.78);
+      backdrop-filter: blur(18px);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .brand { display: flex; align-items: center; gap: 13px; }
+    .mark {
+      width: 42px; height: 42px; border-radius: 12px;
+      border: 1px solid rgba(182,255,54,.4);
+      background: linear-gradient(145deg, rgba(182,255,54,.18), rgba(85,184,255,.06));
+      display: grid; place-items: center;
+      color: var(--lime); font-weight: 900;
+      box-shadow: 0 0 24px rgba(182,255,54,.1);
+    }
+    .brand h1 { margin: 0; font-size: 1.03rem; letter-spacing: .04em; text-transform: uppercase; }
+    .brand p { margin: 2px 0 0; color: var(--muted); font-size: .8rem; }
+    .top-actions { display: flex; gap: 10px; align-items: center; }
+    .pill { border: 1px solid var(--line); color: var(--muted); border-radius: 999px; padding: 8px 12px; font-size: .8rem; }
+    .pulse { width: 7px; height: 7px; background: var(--lime); border-radius: 50%; display: inline-block; margin-right: 7px; box-shadow: 0 0 12px var(--lime); }
+    .layout { display: grid; grid-template-columns: 250px minmax(700px,1fr); min-height: 0; }
+    aside, main { min-width: 0; }
+    .left, .right { padding: 22px; background: rgba(9,14,23,.62); }
+    .left { border-right: 1px solid rgba(255,255,255,.07); }
+    .right { display: none; }
+    .eyebrow { color: var(--lime); text-transform: uppercase; letter-spacing: .16em; font-size: .7rem; font-weight: 800; }
+    h2 { font-size: 1.02rem; margin: 8px 0 14px; }
+    .mode-list { display: grid; gap: 9px; }
+    .view-list { display:grid; gap:9px; margin-top:12px; }
+    .view-tab {
+      min-height:64px; border:1px solid var(--line); border-radius:14px; padding:12px 14px;
+      color:var(--ink); background:#09101a; text-align:left;
+    }
+    .view-tab strong { display:block; font-size:.9rem; }
+    .view-tab span { display:block; margin-top:3px; color:var(--muted); font-size:.76rem; }
+    .view-tab.active { border-color:var(--lime); background:rgba(182,255,54,.075); box-shadow:inset 3px 0 0 var(--lime); }
+    .mode {
+      border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+      text-align: left; border-radius: 14px; padding: 13px 14px;
+      transition: .18s ease;
+    }
+    .mode:hover { border-color: #465872; transform: translateY(-1px); }
+    .mode.active { border-color: var(--lime); background: rgba(182,255,54,.075); box-shadow: inset 3px 0 0 var(--lime); }
+    .mode strong { display: block; font-size: .88rem; }
+    .mode span { display: block; color: var(--muted); font-size: .76rem; margin-top: 3px; }
+    .divider { height: 1px; background: var(--line); margin: 22px 0; }
+    .config { display: grid; gap: 11px; }
+    label { color: var(--muted); font-size: .76rem; }
+    select {
+      width: 100%; margin-top: 6px; padding: 10px 12px; color: var(--ink);
+      background: #0a111c; border: 1px solid var(--line); border-radius: 10px;
+    }
+    .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: .82rem; }
+    .switch { width: 42px; height: 24px; padding: 2px; border: 0; border-radius: 999px; background: #293547; }
+    .switch::after { content: ""; display: block; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: .2s; }
+    .switch.on { background: var(--lime); }
+    .switch.on::after { transform: translateX(18px); background: #071009; }
+    .canvas { padding: 22px 24px 50px; overflow: auto; }
+    .app-view.hidden-pane { display:none; }
+    .workflow-intro { max-width:1120px; margin:0 auto 18px; display:flex; align-items:flex-end; justify-content:space-between; gap:18px; }
+    .workflow-intro-copy { min-width:0; }
+    .workflow-intro h2 { margin:5px 0 0; font-size:1.55rem; }
+    .workflow-intro p { max-width:720px; margin:6px 0 0; color:var(--muted); font-size:.9rem; }
+    #workflowView .workbench { margin-top:0; }
+    .canvas-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
+    .canvas-head h2 { margin: 5px 0 0; font-size: 1.55rem; }
+    .canvas-head p { color: var(--muted); margin: 6px 0 0; max-width: 650px; font-size: .9rem; }
+    .legend { display: flex; gap: 14px; color: var(--muted); font-size: .75rem; white-space: nowrap; }
+    .legend i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+    .flow { max-width: 880px; margin: 0 auto; position: relative; display: grid; gap: 14px; }
+    .flow::before { content: ""; position: absolute; left: 35px; top: 30px; bottom: 30px; width: 2px; background: linear-gradient(var(--lime), var(--blue) 72%, var(--line)); opacity: .55; }
+    .stage {
+      position: relative; z-index: 1; display: grid; grid-template-columns: 72px 1fr auto; align-items: center;
+      gap: 14px; width: 100%; padding: 15px 16px 15px 10px;
+      border: 1px solid var(--line); background: linear-gradient(125deg, rgba(17,27,42,.98), rgba(10,16,26,.98));
+      color: var(--ink); border-radius: var(--radius); text-align: left; transition: .2s ease;
+    }
+    .stage:hover, .stage.selected { border-color: #526681; transform: translateX(3px); }
+    .stage.selected { box-shadow: 0 10px 40px rgba(0,0,0,.25), inset 3px 0 0 var(--blue); }
+    .stage.hidden { display: none; }
+    .num {
+      width: 50px; height: 50px; margin-left: 0; display: grid; place-items: center;
+      border-radius: 15px; color: var(--lime); background: #080e17;
+      border: 1px solid rgba(182,255,54,.27); font-weight: 900; letter-spacing: .04em;
+    }
+    .stage h3 { margin: 0; font-size: .96rem; }
+    .stage p { margin: 4px 0 0; color: var(--muted); font-size: .79rem; }
+    .status { padding: 6px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); font-size: .7rem; }
+    .stage[data-state="done"] .status { color: var(--lime); border-color: rgba(182,255,54,.35); }
+    .stage[data-state="active"] .status { color: var(--blue); border-color: rgba(85,184,255,.45); }
+    .stage[data-gate="true"]::after {
+      content: "DUYỆT"; position: absolute; left: 80px; top: -8px; padding: 2px 7px;
+      color: #171003; background: var(--amber); border-radius: 5px; font-size: .58rem; font-weight: 900; letter-spacing: .1em;
+    }
+    .branch {
+      margin-left: 86px; border: 1px dashed #3a4b64; border-radius: 14px; padding: 11px 14px;
+      color: var(--muted); background: rgba(85,184,255,.04); font-size: .78rem;
+    }
+    .runbar { max-width: 880px; margin: 18px auto 0; display: flex; gap: 10px; }
+    .primary, .secondary {
+      border-radius: 12px; padding: 12px 16px; font-weight: 800;
+    }
+    .primary { flex: 1; border: 0; background: var(--lime); color: #081008; }
+    .secondary { border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+    .primary:hover { filter: brightness(1.08); }
+    .detail-empty { color: var(--muted); padding-top: 34px; }
+    .detail-card { display: none; }
+    .detail-card.show { display: block; }
+    .detail-kicker { color: var(--blue); font-size: .72rem; letter-spacing: .14em; text-transform: uppercase; font-weight: 800; }
+    .detail-card h2 { font-size: 1.35rem; margin: 9px 0 8px; }
+    .detail-card > p { color: var(--muted); font-size: .86rem; }
+    .block { margin-top: 20px; }
+    .block h4 { margin: 0 0 9px; font-size: .76rem; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; }
+    .chips { display: flex; flex-wrap: wrap; gap: 7px; }
+    .chip { font-size: .72rem; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); }
+    .callout { margin-top: 20px; border-left: 3px solid var(--amber); background: rgba(255,200,87,.07); padding: 11px 12px; font-size: .78rem; color: #d9cba6; }
+    .approval { margin-top: 18px; border: 1px solid rgba(255,200,87,.3); border-radius: 14px; padding: 13px; }
+    .approval strong { display: block; font-size: .83rem; }
+    .approval span { color: var(--muted); font-size: .73rem; }
+    .approve-btn { width: 100%; margin-top: 10px; border: 0; border-radius: 9px; padding: 9px; background: var(--amber); color: #181104; font-weight: 900; }
+    .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 18px); opacity: 0; pointer-events: none; padding: 11px 15px; border-radius: 10px; background: #eefbd6; color: #11190c; font-weight: 700; transition: .2s; box-shadow: 0 14px 45px rgba(0,0,0,.4); z-index: 30; }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    .workbench { max-width: 1120px; margin: 24px auto 0; border: 1px solid var(--line); border-radius: 22px; overflow: hidden; background: rgba(11,17,28,.96); }
+    .work-head { padding: 18px 20px; display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; border-bottom: 1px solid var(--line); }
+    .work-head h3 { margin: 3px 0 0; font-size: 1.08rem; }
+    .work-head p { margin: 4px 0 0; color: var(--muted); font-size: .8rem; }
+    .work-body { padding: 20px; }
+    .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 16px; }
+    .choice { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; color: var(--muted); background: #0a111c; }
+    .choice:has(input:checked) { color: var(--ink); border-color: var(--lime); background: rgba(182,255,54,.07); }
+    .choice input { accent-color: var(--lime); }
+    .mini-btn { border: 1px solid var(--line); color: var(--ink); background: var(--panel-2); border-radius: 10px; padding: 9px 12px; font-weight: 750; }
+    .mini-btn.primary-action { border-color: var(--lime); color: #071009; background: var(--lime); }
+    .mini-btn.approve { border-color: rgba(182,255,54,.4); color: var(--lime); background: rgba(182,255,54,.07); }
+    .mini-btn.skip { border-color: #5a6576; color: #d8dee8; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 13px; }
+    table { width: 100%; border-collapse: collapse; min-width: 860px; font-size: .78rem; }
+    th { padding: 10px 11px; text-align: left; color: var(--muted); background: #0a111c; white-space: nowrap; }
+    td { padding: 12px 11px; border-top: 1px solid var(--line); vertical-align: top; }
+    td a { color: var(--blue); text-decoration: none; }
+    .channel { display: inline-flex; padding: 4px 7px; border-radius: 6px; font-size: .67rem; font-weight: 850; letter-spacing: .05em; }
+    .youtube { color: #ff7180; background: rgba(255,83,100,.1); }
+    .tiktok { color: #d9efff; background: rgba(85,184,255,.1); }
+    .facebook { color: #78bdff; background: rgba(85,184,255,.1); }
+    .analysis-text { max-width: 280px; color: #c0cad7; }
+    .empty-result { border: 1px dashed #3c4b61; border-radius: 13px; padding: 30px; text-align: center; color: var(--muted); }
+    .script-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+    .script-card { border: 1px solid var(--line); border-radius: 15px; padding: 14px; background: #0a111c; }
+    .script-card.selected { border-color: var(--lime); box-shadow: inset 0 0 0 1px rgba(182,255,54,.2); }
+    .script-card h4 { margin: 0; font-size: .88rem; }
+    .score-row { display: flex; gap: 7px; flex-wrap: wrap; margin: 9px 0; }
+    .score { font-size: .67rem; color: var(--muted); padding: 4px 6px; border-radius: 6px; background: var(--panel-2); }
+    textarea, .field { width: 100%; color: var(--ink); background: #070d16; border: 1px solid var(--line); border-radius: 10px; padding: 10px 11px; resize: vertical; }
+    textarea { min-height: 210px; line-height: 1.5; }
+    .field-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+    .field-label { display: block; color: var(--muted); font-size: .73rem; }
+    .field-label .field { margin-top: 5px; }
+    .looks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    .look { width: 72px; height: 86px; border-radius: 11px; border: 1px solid var(--line); background: linear-gradient(145deg,#19283b,#0a111c); display: grid; place-items: center; color: var(--muted); font-size: .7rem; }
+    .look.active { border-color: var(--lime); color: var(--lime); box-shadow: inset 0 0 0 1px rgba(182,255,54,.25); }
+    .upload-zone { border: 1px dashed #4b5c73; border-radius: 14px; padding: 24px; text-align: center; color: var(--muted); background: rgba(85,184,255,.035); }
+    .or { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: .72rem; margin: 18px 0; }
+    .or::before,.or::after { content:""; flex:1; height:1px; background:var(--line); }
+    .video-review { display: grid; grid-template-columns: minmax(320px,1.3fr) minmax(280px,.7fr); gap: 16px; }
+    .video-frame { aspect-ratio: 16/9; border-radius: 14px; border: 1px solid var(--line); background: radial-gradient(circle at 50% 35%,rgba(182,255,54,.13),transparent 30%),#050911; display:grid; place-items:center; color:var(--muted); }
+    .play { width:58px;height:58px;border-radius:50%;background:var(--lime);color:#071009;display:grid;place-items:center;font-weight:900;font-size:1.2rem; }
+    .feedback-list { display:grid; gap:8px; margin:12px 0; }
+    .feedback-item { border:1px solid var(--line); border-radius:9px; padding:9px; color:#c0cad7; font-size:.76rem; }
+    .metric-strip { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:9px; margin:12px 0; }
+    .metric { border:1px solid var(--line); border-radius:10px; padding:10px; background:#080f19; }
+    .metric b { display:block; color:var(--ink); font-size:1rem; }
+    .metric span { color:var(--muted); font-size:.67rem; }
+    .risk-list { display:grid; gap:8px; margin-top:12px; }
+    .risk-row { display:flex; align-items:flex-start; gap:9px; border:1px solid var(--line); border-radius:10px; padding:10px; font-size:.76rem; color:#c2ccd8; }
+    .risk-row.ok { border-color:rgba(182,255,54,.25); }
+    .risk-row.warn { border-color:rgba(255,200,87,.35); background:rgba(255,200,87,.04); }
+    .risk-icon { font-weight:900; color:var(--lime); }
+    .warn .risk-icon { color:var(--amber); }
+    .version-list { display:grid; gap:8px; margin-top:12px; }
+    .version { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:10px; border:1px solid var(--line); border-radius:10px; padding:10px; }
+    .version.current { border-color:var(--lime); background:rgba(182,255,54,.045); }
+    .version small { color:var(--muted); }
+    .route-tabs { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-bottom:18px; }
+    .route-tab { text-align:left; border:1px solid var(--line); border-radius:14px; padding:14px; color:var(--ink); background:#0a111c; }
+    .route-tab.active { border-color:var(--lime); background:rgba(182,255,54,.07); box-shadow:inset 3px 0 0 var(--lime); }
+    .route-tab strong { display:block; }
+    .route-tab span { display:block; margin-top:4px; color:var(--muted); font-size:.75rem; }
+    .visual-mix { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; margin-top:9px; }
+    .visual-type { border:1px solid var(--line); border-radius:10px; padding:10px; background:#080f19; color:#c3ceda; font-size:.74rem; }
+    .visual-type b { display:block; color:var(--ink); margin-bottom:3px; }
+    .hidden-pane { display:none; }
+    .jobbar { height:7px; overflow:hidden; border-radius:999px; background:#1a2534; margin-top:10px; }
+    .jobbar > i { display:block; width:0; height:100%; background:var(--lime); transition:width .25s ease; }
+    .mono { font-family:Consolas,monospace; }
+    .project-badge { color:var(--lime); }
+    .help { margin-top:6px; color:var(--muted); font-size:.7rem; }
+    .status-line { min-height:22px; color:var(--blue); font-size:.78rem; margin-top:8px; }
+    input[type=file] { max-width:100%; }
+    button:disabled { cursor:wait; opacity:.55; }
+    a.download { display:inline-flex; align-items:center; min-height:44px; }
+    button, select, input.field, .mini-btn { min-height:44px; }
+    .field-label, .help { font-size:.78rem; }
+    button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline:3px solid var(--blue); outline-offset:2px; }
+    .mode:hover, .stage:hover, .stage.selected { transform:none; }
+    @media (prefers-reduced-motion: reduce) { *,*::before,*::after { scroll-behavior:auto!important; transition:none!important; animation:none!important; } }
+    @media (max-width: 1100px) {
+      .layout { grid-template-columns: 220px 1fr; }
+    }
+    @media (max-width: 760px) {
+      header { padding: 12px 14px; }
+      .top-actions .pill:first-child { display: none; }
+      .layout { display: block; }
+      .left { border-right: 0; border-bottom: 1px solid rgba(255,255,255,.07); }
+      .mode-list { grid-template-columns: 1fr 1fr; }
+      .view-list { grid-template-columns:1fr 1fr; }
+      .canvas { padding: 20px 14px 36px; }
+      .canvas-head { display: block; }
+      .legend { margin-top: 14px; flex-wrap: wrap; }
+      .stage { grid-template-columns: 58px 1fr; }
+      .stage .status { grid-column: 2; justify-self: start; }
+      .flow::before { left: 28px; }
+      .num { width: 42px; height: 42px; }
+      .branch { margin-left: 66px; }
+      .right { padding: 20px 16px 42px; }
+      .script-grid, .video-review { grid-template-columns: 1fr; }
+      .field-grid { grid-template-columns: 1fr; }
+      .metric-strip { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .route-tabs, .visual-mix { grid-template-columns:1fr; }
+      .workflow-intro { align-items:flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div class="brand">
+        <div class="mark">CFD</div>
+        <div><h1>CFD Finance Local Agent</h1><p>Research · Script · Video · Edit · Publish</p></div>
+      </div>
+      <div class="top-actions">
+        <span class="pill project-badge" id="projectBadge">Chưa tạo project</span>
+        <span class="pill" id="backendStatus"><i class="pulse"></i>Đang kết nối localhost…</span>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="left">
+        <div class="eyebrow">Điều hướng</div>
+        <div class="view-list" role="tablist" aria-label="Khu vực ứng dụng">
+          <button class="view-tab active" data-view="workflow" role="tab" aria-selected="true"><strong>Quy trình làm việc</strong><span>Thao tác sản xuất thực tế</span></button>
+          <button class="view-tab" data-view="map" role="tab" aria-selected="false"><strong>Bản đồ vận hành</strong><span>Xem toàn bộ luồng Agent</span></button>
+        </div>
+
+        <div id="workflowSidebar">
+          <div class="divider"></div>
+          <div class="eyebrow">Điểm bắt đầu</div>
+          <h2>Chọn một luồng</h2>
+          <div class="mode-list" role="tablist" aria-label="Chế độ pipeline">
+            <button class="mode active" data-mode="full"><strong>Full pipeline</strong><span>Từ research đến xuất bản</span></button>
+            <button class="mode" data-mode="script"><strong>Nhập kịch bản</strong><span>Bỏ qua research đối thủ</span></button>
+            <button class="mode" data-mode="edit"><strong>Edit-only</strong><span>Đã có video gốc</span></button>
+            <button class="mode" data-mode="publish"><strong>Publish-only</strong><span>Đã có final.mp4</span></button>
+          </div>
+
+          <div class="divider"></div>
+          <div class="eyebrow">Cấu hình</div>
+          <div class="config">
+            <label>Thị trường<select><option>Việt Nam</option><option>Global</option></select></label>
+            <label>Định dạng<select><option>Video dọc &lt; 60 giây</option><option>Video 60–90 giây</option></select></label>
+            <label>Xuất bản<select id="publishMode"><option value="skip">Skip — chỉ xuất file</option><option value="draft">Tạo bản nháp</option><option value="schedule">Hẹn lịch</option><option value="now">Đăng ngay</option></select></label>
+            <div class="switch-row"><span>Dùng avatar HeyGen</span><button class="switch on" aria-label="Bật tắt HeyGen"></button></div>
+            <div class="switch-row"><span>Checkpoint duyệt</span><button class="switch on" aria-label="Bật tắt checkpoint"></button></div>
+          </div>
+        </div>
+      </aside>
+
+      <main class="canvas">
+        <section class="app-view" id="workflowView" role="tabpanel">
+          <div class="workflow-intro">
+            <div class="workflow-intro-copy">
+              <div class="eyebrow">Quy trình thực tế</div>
+              <h2 id="workflowTitle">Research đối thủ</h2>
+              <p id="workflowDesc">Chọn nền tảng, ngành và từ khóa để bắt đầu. Agent chỉ chuyển bước sau khi bạn duyệt checkpoint tương ứng.</p>
+            </div>
+            <button class="secondary" id="workflowResetBtn">Project mới</button>
+          </div>
+          <section class="workbench" id="workbench"></section>
+        </section>
+
+        <section class="app-view hidden-pane" id="mapView" role="tabpanel">
+          <div class="canvas-head">
+          <div><div class="eyebrow">Bản đồ vận hành</div><h2 id="flowTitle">Research → Video → Phân phối</h2><p id="flowDesc">Bấm vào từng bước để xem dữ liệu vào, sản phẩm đầu ra và điểm cần người dùng duyệt.</p></div>
+          <div class="legend"><span><i style="background:var(--lime)"></i>Tự động</span><span><i style="background:var(--amber)"></i>Cần duyệt</span><span><i style="background:var(--blue)"></i>Đang xem</span></div>
+          </div>
+
+          <section class="flow" id="flow" aria-label="Luồng Agent">
+          <button class="stage selected" data-step="research" data-modes="full" data-state="active">
+            <span class="num">01</span><span><h3>Research Facebook · TikTok · YouTube</h3><p>Chọn nguồn, chạy research và duyệt một video phù hợp.</p></span><span class="status">Chờ thao tác</span>
+          </button>
+          <button class="stage" data-step="select" data-modes="full" data-gate="true" data-state="active">
+            <span class="num">02</span><span><h3>Chọn video & góc triển khai</h3><p>So sánh tối thiểu 3 ứng viên, tìm content gap nguyên bản.</p></span><span class="status">Chờ duyệt</span>
+          </button>
+          <div class="branch" data-modes="full">Ba nhánh đề xuất: evergreen kỹ thuật · tin thị trường · tâm lý & quản trị rủi ro</div>
+          <button class="stage" data-step="script" data-modes="full script" data-gate="true">
+            <span class="num">03</span><span><h3>Viết / nhập kịch bản</h3><p>Kiểm tra claim, thời lượng, cấu trúc voice và visual proof.</p></span><span class="status">Chưa chạy</span>
+          </button>
+          <button class="stage" data-step="heygen" data-modes="full script" data-gate="true">
+            <span class="num">04</span><span><h3>Tạo video gốc: Avatar hoặc No-face</h3><p>Chọn VideoGen Avatar hoặc video No-face trước khi dựng editorial.</p></span><span class="status">2 luồng</span>
+          </button>
+          <button class="stage" data-step="align" data-modes="full script edit">
+            <span class="num">05</span><span><h3>Chuẩn hóa voice & caption</h3><p>Speed, Whisper word timing và phụ đề bám đúng lời nói.</p></span><span class="status">Tự động</span>
+          </button>
+          <button class="stage" data-step="story" data-modes="full script edit">
+            <span class="num">06</span><span><h3>Editorial storyboard</h3><p>Mỗi claim đi cùng một hành động hình ảnh hoặc proof.</p></span><span class="status">Tự động</span>
+          </button>
+          <button class="stage" data-step="assets" data-modes="full script edit">
+            <span class="num">07</span><span><h3>Chart, real-world & stock B-roll</h3><p>Ưu tiên đồ họa kỹ thuật chính xác, ghi nguồn và license.</p></span><span class="status">Tự động</span>
+          </button>
+          <button class="stage" data-step="edit" data-modes="full script edit">
+            <span class="num">08</span><span><h3>Finance Editorial Edit</h3><p>Motion graphic V12, subtitle, SFX, BGM và limiter.</p></span><span class="status">Render</span>
+          </button>
+          <button class="stage" data-step="qa" data-modes="full script edit" data-gate="true">
+            <span class="num">09</span><span><h3>QA & duyệt final.mp4</h3><p>Kiểm tra flash frame, proof, chữ, âm thanh và duration.</p></span><span class="status">Chờ duyệt</span>
+          </button>
+          <button class="stage" data-step="content" data-modes="full script edit publish">
+            <span class="num">10</span><span><h3>Nội dung đăng bài</h3><p>Facebook, YouTube, TikTok, hashtag, credit và disclaimer.</p></span><span class="status">Tự động</span>
+          </button>
+          <button class="stage" data-step="publish" data-modes="full script edit publish" data-gate="true">
+            <span class="num">11</span><span><h3 id="publishLabel">Skip xuất bản</h3><p id="publishText">Dừng tại file hoàn chỉnh; không tạo thay đổi bên ngoài.</p></span><span class="status" id="publishStatus">SKIP</span>
+          </button>
+          </section>
+          <div class="runbar"><button class="secondary" id="resetBtn">Project mới</button><button class="primary" id="runBtn">Mở bước đang chờ thao tác</button></div>
+        </section>
+      </main>
+
+      <aside class="right">
+        <div id="detail" class="detail-card show"></div>
+      </aside>
+    </div>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite">Đã cập nhật</div>
+
+  <script type="application/legacy-disabled">
+    const details = {
+      research: {k:"Bước 01 · Discovery", t:"Research đa nền tảng", d:"Người dùng chọn Facebook, TikTok, YouTube hoặc cả ba. Kết quả được gom về một bảng chung để so sánh và duyệt.", input:["Kênh đối thủ", "Nền tảng", "Khoảng thời gian"], output:["Danh sách video", "Số liệu tương tác", "Phân tích viral"], risk:"Video đối thủ chỉ là nguồn phát hiện nhu cầu, không phải nguồn duy nhất cho dữ kiện tài chính."},
+      select: {k:"Bước 02 · Strategy gate", t:"Chọn video & góc mới", d:"Ít nhất ba video được so theo hook, proof, pacing, visual và khoảng trống nội dung mà thương hiệu có thể sở hữu.", input:["Top candidates", "Transcript", "Brand context"], output:["selected_topic.md", "content_brief.md"], risk:"Checkpoint 1: người dùng duyệt chủ đề và góc triển khai trước khi viết kịch bản.", gate:true},
+      script: {k:"Bước 03 · Script gate", t:"Viết hoặc nhập kịch bản", d:"Kịch bản được chia scene theo ý nghĩa, ước tính thời lượng và gắn loại visual dự kiến cho từng claim.", input:["Content brief hoặc script người dùng", "CTA", "Giọng thương hiệu"], output:["voice_script_heygen.txt", "script_scenes.json", "subtitle_phrases.json"], risk:"Nếu script nhập sẵn cần rút gọn, Agent chỉ đưa bản đề xuất — không tự ý đổi ý người dùng.", gate:true},
+      heygen: {k:"Bước 04 · Production route", t:"VideoGen Avatar hoặc Video No-face", d:"Sau khi duyệt kịch bản, người dùng chọn một trong hai cách tạo video gốc. Cả hai cùng đi vào bước caption, editorial edit và QA.", input:["Kịch bản đã duyệt", "Cấu hình route"], output:["avatar_source.mp4 hoặc noface_source.mp4", "production_manifest.json"], risk:"VideoGen Avatar có thể tiêu credit. No-face cần kiểm tra nguồn hình, license và tính đúng của chart trước khi render.", gate:true},
+      align: {k:"Bước 05 · Voice timeline", t:"Chuẩn hóa & căn caption", d:"Voice thực tế là timeline duy nhất. Whisper tạo word timing, sau đó phrase được fuzzy-match với câu hiển thị.", input:["heygen_source.mp4", "subtitle_phrases.json"], output:["avatar_fast.mp4", "timestamps.json", "captions.ass"], risk:"Phrase có match score thấp phải nghe và sửa thủ công trước khi dựng."},
+      story: {k:"Bước 06 · Editorial logic", t:"Voice → claim → visual proof", d:"Hook và CTA giữ talking-head. Phần kỹ thuật dùng motion graphic toàn màn hình, không cắt theo khoảng thời gian cố định.", input:["Voice timing", "Kịch bản", "Training pack V12"], output:["storyboard.md", "visual_contract.md", "broll_slots.json"], risk:"Proof phải tồn tại đủ lâu để hiểu; các slot liền kề không được tạo flash avatar."},
+      assets: {k:"Bước 07 · Visual evidence", t:"Tạo và chọn B-roll", d:"Chart dùng geometry xác định; footage thật dùng cho sự kiện/tổ chức; stock chỉ dùng làm bối cảnh.", input:["Storyboard", "Nguồn chính thức", "Kho stock"], output:["Chart/diagram", "B-roll", "media_manifest.json"], risk:"Không sao chép watermark, chart hoặc hình người thật của đối thủ. Mọi asset cần nguồn và license."},
+      edit: {k:"Bước 08 · V12 system", t:"Finance Editorial Edit + feedback", d:"Sau mỗi bản dựng, người dùng xem ngay, ghi yêu cầu sửa theo mốc thời gian, tạo phiên bản mới hoặc tải bản đã duyệt.", input:["Avatar", "Assets", "Caption", "Feedback vòng trước"], output:["render_preview.mp4", "final_vN.mp4", "edit_feedback.json"], risk:"Agent lưu phiên bản, không ghi đè bản đã được người dùng đánh dấu là tốt."},
+      qa: {k:"Bước 09 · Quality gate", t:"QA kỹ thuật + xem toàn bộ", d:"Validator kiểm tra cấu trúc; người dựng xem toàn video và các seam để bắt flash frame, lỗi chữ, proof sai hoặc âm thanh lấn voice.", input:["final.mp4", "Storyboard", "Media manifest"], output:["QA_REPORT.md", "Contact sheet", "Bản final được duyệt"], risk:"Checkpoint 4: không tạo kế hoạch đăng thật nếu final chưa được duyệt.", gate:true},
+      content: {k:"Bước 10 · Distribution prep", t:"Soạn nội dung đăng bài", d:"Tạo nội dung riêng cho Facebook, YouTube Shorts và TikTok, kèm hashtag, music credit và disclaimer khi phù hợp.", input:["Final video", "Brand config", "Nguồn nội dung"], output:["NOI_DUNG_DANG_BAI.txt", "meta.json", "publish_plan.json"], risk:"Tiêu đề và caption phải bám đúng claim và ngày dữ liệu trong video."},
+      publish: {k:"Bước 11 · External action", t:"Skip / Draft / Schedule / Now", d:"Mặc định là Skip. Khi được phép, Agent định tuyến đúng publisher theo profile và đọc lại kết quả từ nền tảng.", input:["publish_plan.json", "Quyền truy cập", "Thời gian đăng"], output:["publish.json", "Post ID/URL", "Trạng thái xác minh"], risk:"Checkpoint cuối: phải có lựa chọn rõ nền tảng và thời gian. TikTok lỗi API sẽ chuyển sang package đăng thủ công.", gate:true}
+    };
+
+    const modes = {
+      full: ["research","select","script","heygen","align","story","assets","edit","qa","content","publish"],
+      script: ["script","heygen","align","story","assets","edit","qa","content","publish"],
+      edit: ["align","story","assets","edit","qa","content","publish"],
+      publish: ["content","publish"]
+    };
+    let currentMode = "full";
+    let cursor = 1;
+    const stageEls = [...document.querySelectorAll('.stage')];
+
+    function workShell(kicker, title, desc, body) {
+      return `<div class="work-head"><div><div class="eyebrow">${kicker}</div><h3>${title}</h3><p>${desc}</p></div></div><div class="work-body">${body}</div>`;
+    }
+
+    function renderWorkbench(key) {
+      const box = document.getElementById('workbench');
+      if (key === 'research') {
+        box.innerHTML = workShell('Thao tác bước 01','Chọn nguồn và chạy research','Kết quả demo chỉ xuất hiện sau khi bấm Chạy research.',`
+          <div class="toolbar">
+            <label class="choice"><input type="checkbox" checked value="facebook"> Facebook</label>
+            <label class="choice"><input type="checkbox" checked value="tiktok"> TikTok</label>
+            <label class="choice"><input type="checkbox" checked value="youtube"> YouTube</label>
+            <label class="field-label">Ngành/ngách<select class="field" id="researchIndustry" style="width:205px"><option value="all">Tất cả CFD & Finance</option><option value="forex">Forex</option><option value="gold">Vàng · XAUUSD</option><option value="stocks">Chứng khoán</option><option value="crypto">Crypto</option><option value="risk">Tâm lý · Quản trị rủi ro</option></select></label>
+            <label class="field-label">Từ khóa<input class="field" id="researchQuery" style="width:210px" placeholder="VD: liquidity, stop loss..."></label>
+            <select class="field" id="researchSort" style="width:190px"><option value="viral">Xếp theo Viral score</option><option value="views">Xếp theo lượt xem</option><option value="engagement">Xếp theo tương tác</option></select>
+            <button class="mini-btn primary-action" onclick="runResearchDemo()">Chạy research</button>
+          </div>
+          <div id="researchResult" class="empty-result">Chọn ít nhất một nền tảng rồi bấm <strong>Chạy research</strong>.</div>`);
+      } else if (key === 'script') {
+        box.innerHTML = workShell('Thao tác bước 03','Ba kịch bản để so sánh và sửa','Mỗi bản có phân tích hook, cấu trúc và lợi thế triển khai. Nội dung trong ô có thể sửa trực tiếp.',`
+          <div class="risk-list" style="margin:0 0 14px"><div class="risk-row ok"><span class="risk-icon">✓</span><span><strong>Claim check:</strong> Không có cam kết lợi nhuận hoặc lời khuyên mua/bán trực tiếp.</span></div><div class="risk-row warn"><span class="risk-icon">!</span><span><strong>Cần lưu ý:</strong> Claim “equal lows thu hút thanh khoản” phải được trình bày như cơ chế thường gặp, không phải kết quả chắc chắn.</span></div></div>
+          <div class="script-grid">
+            ${scriptCard(1,'Cảnh báo trực diện','Hook 9.2','Rõ ý 8.8','“Nếu bạn cứ đặt stop loss đúng dưới đáy gần nhất, thị trường không cần đoán cũng biết tiền của bạn đang ở đâu.”\n\nGiải thích liquidity pool bằng một ví dụ EURUSD đơn giản. Chỉ ra vì sao equal lows thu hút thanh khoản và cách chờ xác nhận thay vì vào lệnh sớm.\n\nCTA: Lưu video để kiểm tra lại trước giao dịch tiếp theo.')}
+            ${scriptCard(2,'Phản trực giác','Hook 8.9','Dễ viral 9.1','“Hai đáy bằng nhau không hẳn là hỗ trợ. Trong nhiều trường hợp, đó là nơi giá muốn tìm đến.”\n\nBắt đầu bằng niềm tin phổ biến, đảo ngược nó bằng sơ đồ liquidity, sau đó đưa checklist ba điều kiện xác nhận.\n\nCTA: Comment LIQUIDITY để nhận checklist.')}
+            ${scriptCard(3,'Case study nhanh','Hook 8.6','Thực dụng 9.3','“Lệnh BUY này nhìn rất đẹp — cho đến khi bạn nhìn lên khung H4.”\n\nDùng một case đa khung thời gian, chỉ ra mâu thuẫn giữa M5 và H4 rồi minh họa điểm vào sau break structure.\n\nCTA: Follow để xem thêm case CFD thực tế.')}
+          </div>`);
+      } else if (key === 'heygen') {
+        box.innerHTML = workShell('Thao tác bước 04','Chọn một trong hai luồng sản xuất','Hai luồng dùng chung kịch bản đã duyệt và hội tụ tại bước Finance Editorial Edit.',`
+          <div class="route-tabs"><button class="route-tab active" id="avatarRoute" onclick="showSourcePane('heygen')"><strong>01 · VideoGen Avatar</strong><span>Nhân vật AI nói trực diện, hỗ trợ nhiều avatar look trong một video.</span></button><button class="route-tab" id="nofaceRoute" onclick="showSourcePane('noface')"><strong>02 · Video No-face</strong><span>Voice dẫn chuyện kết hợp chart, infographic, footage thật và stock.</span></button></div>
+          <div id="heygenPane">
+            <div class="field-grid">
+              <label class="field-label">HeyGen API key<input class="field" type="password" value="••••••••••••••" aria-label="HeyGen API key"></label>
+              <label class="field-label">Voice ID<input class="field" value="voice_anh_cong_demo" aria-label="Voice ID"></label>
+              <label class="field-label">Tốc độ đọc<input class="field" value="1.0" aria-label="Tốc độ đọc"></label>
+              <label class="field-label">Khung hình<input class="field" value="720 × 1280 · dọc" aria-label="Khung hình"></label>
+            </div>
+            <div class="block"><h4>Avatar looks được chọn</h4><div class="looks"><button class="look active">Look 13</button><button class="look active">Look 15</button><button class="look active">Look 18</button><button class="look" onclick="this.classList.toggle('active')">Look 16</button><button class="look" onclick="addLookDemo()">+ Thêm ID</button></div></div>
+            <div class="metric-strip"><div class="metric"><b>55 giây</b><span>Thời lượng dự kiến</span></div><div class="metric"><b>4 scene</b><span>Số cảnh HeyGen</span></div><div class="metric"><b>3 looks</b><span>Avatar luân phiên</span></div><div class="metric"><b>≈ 0.92 credit</b><span>Minh họa theo 1 credit/phút</span></div></div>
+            <div class="callout">Chi phí chính thức sẽ tính lại theo quota/rate của tài khoản HeyGen trước khi xác nhận render.</div>
+            <div class="toolbar" style="margin-top:14px"><button class="mini-btn primary-action" onclick="toast('Demo: yêu cầu xác nhận credit trước khi render')">Kiểm tra & tạo video</button></div>
+          </div>
+          <div id="nofacePane" class="hidden-pane">
+            <div class="field-grid"><label class="field-label">Nguồn voice<select class="field"><option>AI voice / TTS</option><option>Tải voice thu âm</option><option>Chỉ nhạc + text</option></select></label><label class="field-label">Phong cách video<select class="field"><option>Finance editorial motion graphic</option><option>Tin tài chính thời sự</option><option>Chart lesson chuyên sâu</option></select></label><label class="field-label">Tỷ lệ voice / hình<input class="field" value="Voice dẫn 100% · visual theo từng beat"></label><label class="field-label">Thời lượng mục tiêu<input class="field" value="45–60 giây"></label></div>
+            <div class="block"><h4>Hỗn hợp visual mặc định</h4><div class="visual-mix"><div class="visual-type"><b>Technical proof · 50%</b>Chart, vùng giá, cấu trúc, infographic.</div><div class="visual-type"><b>Real-world · 30%</b>Sự kiện, tổ chức và bối cảnh tài chính thật.</div><div class="visual-type"><b>Stock context · 20%</b>Cảm xúc, hành vi và bối cảnh phụ trợ.</div></div></div>
+            <div class="risk-list"><div class="risk-row ok"><span class="risk-icon">✓</span><span>Không cần avatar ID hoặc HeyGen credit.</span></div><div class="risk-row warn"><span class="risk-icon">!</span><span>Chart và số liệu kỹ thuật phải có nguồn hoặc được tạo deterministic; không dùng hình trang trí để thay proof.</span></div></div>
+            <div class="toolbar" style="margin-top:14px"><button class="mini-btn primary-action" onclick="toast('Demo: đã tạo storyboard No-face theo từng beat')">Tạo storyboard No-face</button><button class="mini-btn approve" onclick="goToStep('align')">Duyệt route No-face</button></div>
+          </div>`);
+      } else if (key === 'edit') {
+        box.innerHTML = workShell('Thao tác bước 08','Xem video, feedback và tải xuống','Mỗi yêu cầu sửa được lưu thành một vòng feedback có mốc thời gian.',`
+          <div class="video-review">
+            <div><div class="video-frame"><div style="text-align:center"><div class="play">▶</div><p>final_v1.mp4 · 00:48</p></div></div><div class="toolbar" style="margin-top:12px"><button class="mini-btn primary-action" onclick="toast('Demo: file final.mp4 sẽ được tải xuống')">↓ Tải video</button><button class="mini-btn approve" onclick="toast('Đã đánh dấu video được duyệt')">Duyệt bản này</button></div></div>
+            <div><label class="field-label">Yêu cầu chỉnh sửa<textarea id="feedbackText" style="min-height:130px" placeholder="Ví dụ: 00:12 chữ hơi nhỏ; 00:27 đổi chart sang màu xanh; giảm nhạc nền..."></textarea></label><button class="mini-btn primary-action" style="width:100%;margin-top:10px" onclick="sendFeedbackDemo()">Gửi feedback & tạo V2</button><div class="feedback-list" id="feedbackList"><div class="feedback-item"><strong>Vòng 1</strong><br>Chưa có feedback.</div></div></div>
+          </div><div class="block"><h4>Lịch sử phiên bản</h4><div class="version-list" id="versionList"><div class="version current"><strong>V1</strong><span>Editorial render đầu tiên<br><small>48 giây · vừa tạo</small></span><button class="mini-btn">Xem</button></div></div></div>`);
+      } else if (key === 'publish') {
+        box.innerHTML = workShell('Thao tác bước 11','Xuất bản là lựa chọn, không bắt buộc','Người dùng có thể bỏ qua hoàn toàn hoặc chọn nền tảng và lịch đăng.',`
+          <div class="risk-list" style="margin:0 0 15px"><div class="risk-row ok"><span class="risk-icon">✓</span><span>Đã có disclaimer nội dung giáo dục, không phải khuyến nghị đầu tư.</span></div><div class="risk-row ok"><span class="risk-icon">✓</span><span>Không phát hiện câu cam kết lợi nhuận hoặc tỷ lệ thắng không có nguồn.</span></div><div class="risk-row warn"><span class="risk-icon">!</span><span>Video có nhạc nền: cần giữ credit trong YouTube Description.</span></div></div>
+          <div class="toolbar"><label class="choice"><input type="checkbox" checked> Facebook</label><label class="choice"><input type="checkbox" checked> YouTube</label><label class="choice"><input type="checkbox"> TikTok</label></div>
+          <div class="field-grid"><label class="field-label">Chế độ<select class="field"><option>Hẹn lịch</option><option>Đăng ngay</option><option>Bản nháp</option></select></label><label class="field-label">Thời gian<input class="field" value="20:10 · 15/09/2026"></label></div>
+          <div class="toolbar" style="margin-top:16px"><button class="mini-btn skip" onclick="skipPublishDemo()">Bỏ qua đăng bài</button><button class="mini-btn primary-action" onclick="toast('Demo: cần xác nhận cuối trước khi đăng')">Kiểm tra kế hoạch đăng</button></div>`);
+      } else {
+        const x = details[key];
+        box.innerHTML = workShell(x.k,x.t,x.d,`<div class="block"><h4>Đầu vào</h4><div class="chips">${x.input.map(v=>`<span class="chip">${v}</span>`).join('')}</div></div><div class="block"><h4>Sản phẩm đầu ra</h4><div class="chips">${x.output.map(v=>`<span class="chip">${v}</span>`).join('')}</div></div><div class="callout">${x.risk}</div>`);
+      }
+    }
+
+    function scriptCard(n,title,s1,s2,text) {
+      return `<article class="script-card" id="scriptCard${n}"><h4>Kịch bản ${n} · ${title}</h4><div class="score-row"><span class="score">${s1}</span><span class="score">${s2}</span></div><textarea aria-label="Kịch bản ${n}">${text}</textarea><button class="mini-btn approve" style="width:100%;margin-top:9px" onclick="approveScript(${n})">Duyệt kịch bản ${n}</button></article>`;
+    }
+
+    const researchRows = [
+      {platform:'youtube',channel:'YouTube',industry:'forex',industryLabel:'Forex',title:'Liquidity Pool: Where Smart Money Hunts',url:'https://youtube.com/watch?v=demo',views:482000,viewsText:'482K',likes:'18.4K',comments:'1.2K',shares:'3.8K',engagement:4.86,viral:92,why:'Hook phản trực giác, visual chart rõ, một cơ chế duy nhất và payoff xuất hiện sớm.'},
+      {platform:'tiktok',channel:'TikTok',industry:'risk',industryLabel:'Quản trị rủi ro',title:'Stop Loss của bạn đang nằm ở đâu?',url:'https://tiktok.com/@demo/video/1',views:1200000,viewsText:'1.2M',likes:'74K',comments:'2.8K',shares:'11.6K',engagement:7.37,viral:96,why:'Mở bằng câu hỏi cá nhân, nhịp cắt nhanh và ví dụ trực quan trong 3 giây đầu.'},
+      {platform:'facebook',channel:'Facebook',industry:'forex',industryLabel:'Forex',title:'3 sai lầm khi giao dịch đa khung',url:'https://facebook.com/reel/demo',views:316000,viewsText:'316K',likes:'9.7K',comments:'846',shares:'2.1K',engagement:4.00,viral:87,why:'Danh sách ba lỗi dễ lưu/chia sẻ, tiêu đề cụ thể và CTA đúng pain point.'},
+      {platform:'youtube',channel:'YouTube',industry:'gold',industryLabel:'Vàng · XAUUSD',title:'XAUUSD phản ứng thế nào khi lợi suất tăng?',url:'https://youtube.com/watch?v=gold-demo',views:628000,viewsText:'628K',likes:'22.6K',comments:'1.8K',shares:'5.4K',engagement:4.75,viral:94,why:'Gắn biến động vàng với một nguyên nhân rõ ràng, chart trước–sau dễ hiểu và tiêu đề đúng nhu cầu thời sự.'},
+      {platform:'tiktok',channel:'TikTok',industry:'crypto',industryLabel:'Crypto',title:'Đừng dùng đòn bẩy crypto trước khi hiểu điều này',url:'https://tiktok.com/@demo/video/crypto',views:864000,viewsText:'864K',likes:'51K',comments:'2.1K',shares:'8.2K',engagement:7.09,viral:90,why:'Cảnh báo rủi ro trực diện, tình huống mất tiền cụ thể và checklist hành động ngắn.'},
+      {platform:'facebook',channel:'Facebook',industry:'stocks',industryLabel:'Chứng khoán',title:'Volume tăng nhưng giá không tăng — vì sao?',url:'https://facebook.com/reel/stocks-demo',views:271000,viewsText:'271K',likes:'8.9K',comments:'704',shares:'1.9K',engagement:4.25,viral:85,why:'Đặt một nghịch lý dễ gây tò mò và giải thích bằng visual volume-price đơn giản.'}
+    ];
+    window.runResearchDemo = function() {
+      const selected=[...document.querySelectorAll('#workbench input[type=checkbox]:checked')].map(x=>x.value);
+      if(!selected.length){toast('Hãy chọn ít nhất một nền tảng');return;}
+      const industry=document.getElementById('researchIndustry').value;
+      const query=(document.getElementById('researchQuery').value||'').trim().toLowerCase();
+      const sort=document.getElementById('researchSort').value;
+      let rows=researchRows.filter(r=>selected.includes(r.platform) && (industry==='all' || r.industry===industry) && (!query || (r.title+' '+r.industryLabel+' '+r.why).toLowerCase().includes(query)));
+      rows.sort((a,b)=>sort==='views'?b.views-a.views:sort==='engagement'?b.engagement-a.engagement:b.viral-a.viral);
+      if(!rows.length){ document.getElementById('researchResult').className='empty-result'; document.getElementById('researchResult').textContent='Không tìm thấy video phù hợp với bộ lọc. Hãy đổi từ khóa hoặc chọn thêm nền tảng.'; toast('Không có kết quả phù hợp'); return; }
+      document.getElementById('researchResult').className='table-wrap';
+      document.getElementById('researchResult').innerHTML=`<table><thead><tr><th>Kênh</th><th>Ngành/ngách</th><th>Video đối thủ</th><th>Link gốc</th><th>Lượt xem</th><th>Like</th><th>Bình luận</th><th>Chia sẻ</th><th>Viral</th><th>Vì sao viral</th><th></th></tr></thead><tbody>${rows.map((r,i)=>`<tr><td><span class="channel ${r.platform}">${r.channel}</span></td><td>${r.industryLabel}</td><td><strong>${r.title}</strong></td><td><a href="${r.url}" target="_blank">Mở video ↗</a></td><td>${r.viewsText}</td><td>${r.likes}</td><td>${r.comments}</td><td>${r.shares}</td><td><strong>${r.viral}/100</strong></td><td class="analysis-text">${r.why}</td><td><button class="mini-btn approve" onclick="approveVideo(${i})">Duyệt</button></td></tr>`).join('')}</tbody></table>`;
+      toast(`Đã tìm thấy ${rows.length} video phù hợp`);
+    };
+
+    window.approveVideo = function(i){ toast('Đã chọn video — chuyển sang 3 phương án kịch bản'); setTimeout(()=>goToStep('script'),450); };
+    window.approveScript = function(n){ document.querySelectorAll('.script-card').forEach(x=>x.classList.remove('selected')); document.getElementById('scriptCard'+n).classList.add('selected'); toast(`Đã duyệt kịch bản ${n}`); setTimeout(()=>goToStep('heygen'),450); };
+    window.showSourcePane = function(which){ document.getElementById('heygenPane').classList.toggle('hidden-pane',which!=='heygen'); document.getElementById('nofacePane').classList.toggle('hidden-pane',which!=='noface'); document.getElementById('avatarRoute').classList.toggle('active',which==='heygen'); document.getElementById('nofaceRoute').classList.toggle('active',which==='noface'); };
+    window.addLookDemo = function(){ toast('Bản thật sẽ mở ô nhập thêm Avatar ID'); };
+    window.sendFeedbackDemo = function(){ const v=document.getElementById('feedbackText').value.trim(); if(!v){toast('Hãy nhập nội dung cần sửa');return;} document.getElementById('feedbackList').innerHTML=`<div class="feedback-item"><strong>Vòng 2 · đang xử lý</strong><br>${v}</div><div class="feedback-item"><strong>Vòng 1</strong><br>Bản dựng đầu tiên.</div>`; document.getElementById('versionList').innerHTML=`<div class="version current"><strong>V2</strong><span>Đang dựng theo feedback<br><small>00:12 chữ · 00:27 audio</small></span><button class="mini-btn">Đang xử lý</button></div><div class="version"><strong>V1</strong><span>Editorial render đầu tiên<br><small>48 giây · bản gốc</small></span><button class="mini-btn">Xem</button></div>`; toast('Đã lưu feedback và tạo yêu cầu V2'); };
+    window.skipPublishDemo = function(){ document.getElementById('publishMode').value='skip'; document.getElementById('publishLabel').textContent='Skip xuất bản'; document.getElementById('publishText').textContent='Dừng tại file hoàn chỉnh; không tạo thay đổi bên ngoài.'; document.getElementById('publishStatus').textContent='SKIP'; toast('Đã bỏ qua đăng bài'); };
+    window.goToStep = function(key){ const el=stageEls.find(x=>x.dataset.step===key); if(el){renderDetail(key);el.scrollIntoView({behavior:'smooth',block:'center'});} };
+
+    function renderDetail(key) {
+      const x = details[key];
+      document.getElementById('detail').innerHTML = `
+        <div class="detail-kicker">${x.k}</div><h2>${x.t}</h2><p>${x.d}</p>
+        <div class="block"><h4>Đầu vào</h4><div class="chips">${x.input.map(v=>`<span class="chip">${v}</span>`).join('')}</div></div>
+        <div class="block"><h4>Sản phẩm đầu ra</h4><div class="chips">${x.output.map(v=>`<span class="chip">${v}</span>`).join('')}</div></div>
+        <div class="callout">${x.risk}</div>
+        ${x.gate ? `<div class="approval"><strong>Checkpoint cần người dùng duyệt</strong><span>Trong bản thật, pipeline sẽ dừng an toàn tại đây.</span><button class="approve-btn" onclick="demoApprove()">Duyệt bước này trong demo</button></div>` : ''}`;
+      stageEls.forEach(e=>e.classList.toggle('selected', e.dataset.step===key));
+      renderWorkbench(key);
+    }
+
+    function applyMode(mode) {
+      currentMode = mode; cursor = 0;
+      document.querySelectorAll('[data-modes]').forEach(el => {
+        el.classList.toggle('hidden', !el.dataset.modes.split(' ').includes(mode));
+      });
+      document.querySelectorAll('.mode').forEach(b=>b.classList.toggle('active', b.dataset.mode===mode));
+      const names = {full:'Research → Video → Phân phối',script:'Kịch bản → Video → Phân phối',edit:'Video gốc → Editorial Edit',publish:'Final.mp4 → Phân phối'};
+      document.getElementById('flowTitle').textContent = names[mode];
+      stageEls.forEach(e => { e.dataset.state=''; e.querySelector('.status').textContent = e.dataset.gate==='true' ? 'Cần duyệt' : 'Tự động'; });
+      const first = modes[mode][0]; renderDetail(first);
+    }
+
+    function toast(message) {
+      const el=document.getElementById('toast'); el.textContent=message; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),1800);
+    }
+
+    function runNext() {
+      const sequence=modes[currentMode];
+      if(cursor>=sequence.length){ toast('Demo đã đi hết pipeline'); return; }
+      const key=sequence[cursor]; const el=stageEls.find(x=>x.dataset.step===key);
+      el.dataset.state=el.dataset.gate==='true'?'active':'done';
+      el.querySelector('.status').textContent=el.dataset.gate==='true'?'Chờ duyệt':'Hoàn thành';
+      renderDetail(key); el.scrollIntoView({behavior:'smooth',block:'center'});
+      if(el.dataset.gate==='true') toast('Pipeline dừng tại checkpoint duyệt'); else {cursor++; toast('Đã mô phỏng hoàn thành bước');}
+    }
+
+    window.demoApprove = function(){
+      const key=modes[currentMode][cursor]; const el=stageEls.find(x=>x.dataset.step===key);
+      if(el){ el.dataset.state='done'; el.querySelector('.status').textContent='Đã duyệt'; cursor++; toast('Đã duyệt — có thể chạy bước tiếp theo'); }
+    };
+
+    document.querySelectorAll('.mode').forEach(b=>b.addEventListener('click',()=>applyMode(b.dataset.mode)));
+    stageEls.forEach(e=>e.addEventListener('click',()=>renderDetail(e.dataset.step)));
+    document.querySelectorAll('.switch').forEach(s=>s.addEventListener('click',()=>s.classList.toggle('on')));
+    document.getElementById('runBtn').addEventListener('click',runNext);
+    document.getElementById('resetBtn').addEventListener('click',()=>{applyMode(currentMode); toast('Đã đặt lại demo');});
+    document.getElementById('publishMode').addEventListener('change',e=>{
+      const map={skip:['Skip xuất bản','Dừng tại file hoàn chỉnh; không tạo thay đổi bên ngoài.','SKIP'],draft:['Tạo bản nháp','Chuẩn bị nội dung ở trạng thái nháp nếu nền tảng hỗ trợ.','DRAFT'],schedule:['Hẹn lịch xuất bản','Chọn nền tảng, ngày và giờ trước khi xác nhận.','SCHEDULE'],now:['Đăng ngay','Yêu cầu xác nhận cuối trước khi tạo thay đổi bên ngoài.','PUBLISH']};
+      const v=map[e.target.value]; document.getElementById('publishLabel').textContent=v[0]; document.getElementById('publishText').textContent=v[1]; document.getElementById('publishStatus').textContent=v[2]; renderDetail('publish');
+    });
+    renderDetail('research');
+  </script>
+  <script src="/app.js"></script>
+</body>
+</html>
