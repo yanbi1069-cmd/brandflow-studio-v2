@@ -873,6 +873,67 @@ def create_noface_plan(project_folder: Path, payload: dict[str, Any]) -> dict[st
     return plan
 
 
+def prepare_noface_source(project_folder: Path, payload: dict[str, Any], progress: Callable[[int, str], None]) -> dict[str, Any]:
+    """Persist the no-face plan and return a real audio source for the edit pipeline."""
+    plan = create_noface_plan(project_folder, payload)
+    voice_source = str(payload.get("voice_source") or "tts").strip().lower()
+    if voice_source == "approved-audio":
+        secrets = load_secrets()
+        api_key = str(payload.get("heygen_key") or secrets.get("HEYGEN_API_KEY") or "").strip()
+        voice_id = str(payload.get("voice_id") or secrets.get("HEYGEN_VOICE_ID") or "").strip()
+        avatar_ids = payload.get("avatar_ids") or [item.strip() for item in str(secrets.get("HEYGEN_AVATAR_ID") or "").split(",") if item.strip()]
+        if not api_key or not voice_id or not avatar_ids:
+            raise RuntimeError("Chưa cấu hình HEYGEN_API_KEY, HEYGEN_VOICE_ID hoặc HEYGEN_AVATAR_ID")
+        script = read_json(project_folder / "approved_script.json", {}) or {}
+        text = str(script.get("text") or "").strip()
+        if not text:
+            raise ValueError("Không có kịch bản đã duyệt để tạo HeyGen voice")
+        speed = max(0.5, min(1.5, float(payload.get("speed") or 1)))
+        scenes = payload.get("scenes") or [{"text": text}]
+        progress(10, "Đang tạo source bằng HeyGen Voice ID đã duyệt")
+        source_result = submit_heygen(project_folder, {"heygen_key": api_key, "voice_id": voice_id, "avatar_ids": avatar_ids, "scenes": scenes, "speed": speed, "test": bool(payload.get("test", True))}, progress)
+        source_video = project_folder / source_result["file"]
+        output = project_folder / "heygen_voice.mp3"
+        progress(92, "Đang tách voice HeyGen cho timeline no-face")
+        _run_engine(["ffmpeg", "-y", "-i", str(source_video), "-vn", "-c:a", "libmp3lame", "-b:a", "192k", str(output)], ROOT.parent, 600)
+        plan.update(status="ready", source_file=output.name, voice_provider="heygen", voice_id="***", speed=speed, heygen_source_file=source_video.name)
+        write_json(project_folder / "noface_plan.json", plan)
+        progress(100, "Audio HeyGen cho video no-face đã sẵn sàng")
+        return {"file": output.name, "size": output.stat().st_size, "plan": plan}
+    if voice_source != "tts":
+        source_name = str(payload.get("source_file") or "").strip()
+        source = _safe_project_file(project_folder, source_name)
+        if not source.is_file():
+            raise FileNotFoundError("Không tìm thấy tệp giọng đọc đã tải lên")
+        plan.update(status="ready", source_file=source_name)
+        write_json(project_folder / "noface_plan.json", plan)
+        progress(100, "Voice no-face đã sẵn sàng")
+        return {"file": source_name, "plan": plan}
+
+    script = read_json(project_folder / "approved_script.json", {}) or {}
+    text = str(script.get("text") or "").strip()
+    if not text:
+        text = "\n\n".join(str(scene.get("text") if isinstance(scene, dict) else scene).strip() for scene in payload.get("scenes", [])).strip()
+    if not text:
+        raise ValueError("Không có kịch bản đã duyệt để tạo giọng AI")
+    voice = str(payload.get("voice") or "vi-VN-HoaiMyNeural").strip()
+    if not re.fullmatch(r"[A-Za-z]{2,3}-[A-Za-z]{2,4}-[A-Za-z0-9]+Neural", voice):
+        raise ValueError("Giọng AI không hợp lệ")
+    speed = max(0.5, min(1.5, float(payload.get("speed") or 1)))
+    rate = round((speed - 1) * 100)
+    output = project_folder / "noface_voice.mp3"
+    progress(15, "Đang tạo giọng AI cho video no-face")
+    command = [os.sys.executable, "-m", "edge_tts", "--voice", voice, "--rate", f"{rate:+d}%", "--text", text, "--write-media", str(output)]
+    completed = subprocess.run(command, cwd=ROOT.parent, capture_output=True, text=True, timeout=300, check=False)
+    if completed.returncode or not output.is_file() or output.stat().st_size == 0:
+        detail = (completed.stderr or completed.stdout or "edge-tts không tạo được audio").strip()
+        raise RuntimeError(f"Không thể tạo giọng AI: {detail[:240]}")
+    plan.update(status="ready", source_file=output.name, voice=voice, speed=speed)
+    write_json(project_folder / "noface_plan.json", plan)
+    progress(100, "Giọng AI no-face đã sẵn sàng")
+    return {"file": output.name, "size": output.stat().st_size, "plan": plan}
+
+
 def build_edit_plan(project_folder: Path, payload: dict[str, Any], domain: dict[str, Any] | str | None = None) -> dict[str, Any]:
     domain_pack = get_domain_pack(domain) if isinstance(domain, str) or domain is None else domain
     style = get_edit_style(payload.get("style_id"), domain_pack)
@@ -885,19 +946,24 @@ def build_edit_plan(project_folder: Path, payload: dict[str, Any], domain: dict[
     effects = style.get("textEffects") or ["fade-rise"]
     transitions = style.get("transitions") or ["clean-cut"]
     video_mode = str(payload.get("video_mode") or "avatar")
-    proof_cues = re.compile(r"\b(\d+(?:[.,]\d+)?\s*%?|số liệu|dữ liệu|nghiên cứu|báo cáo|biểu đồ|chart|kết quả|bằng chứng|so sánh|tăng|giảm|chi phí|doanh thu|lợi nhuận|nguồn)\b", re.I)
+    # A number alone is not a reason to draw a chart. Reserve designed proof
+    # visuals for narration that explicitly cites evidence or asks for a visual
+    # comparison; numeric hooks, stories and advice work better as real footage.
+    proof_cues = re.compile(r"\b(nghiên cứu (?:cho thấy|chỉ ra)|theo báo cáo|biểu đồ|chart|bằng chứng|so sánh|theo nguồn|dữ liệu cho thấy|đường xanh|đường đỏ)\b", re.I)
     context_cues = re.compile(r"\b(khi|lúc|trước đây|hằng ngày|mỗi ngày|trải nghiệm|câu chuyện|khách hàng|đội ngũ|quy trình|thực tế|tình huống|bắt đầu|thực hiện|làm việc)\b", re.I)
     metaphor_cues = re.compile(r"\b(giống như|tựa như|hình dung|chiếc|cánh cửa|cây cầu|nút thắt|đòn bẩy)\b", re.I)
     opinion_cues = re.compile(r"\b(tôi nghĩ|theo tôi|quan điểm|điều quan trọng|hãy nhớ|bài học)\b", re.I)
     beats = []
     for index, spoken in enumerate(segments):
-        if index == 0 or index == len(segments) - 1 or opinion_cues.search(spoken):
+        if video_mode != "noface" and (index == 0 or index == len(segments) - 1 or opinion_cues.search(spoken)):
             role = "presenter"
         elif proof_cues.search(spoken):
             role = "proof"
         elif metaphor_cues.search(spoken):
             role = "metaphor"
         elif context_cues.search(spoken):
+            role = "context"
+        elif video_mode == "noface":
             role = "context"
         else:
             role = "presenter"
@@ -911,7 +977,7 @@ def build_edit_plan(project_folder: Path, payload: dict[str, Any], domain: dict[
             asset_source, providers, reason, fallback, minimum_hold = ("brand-typography" if video_mode == "noface" else "approved-source-video"), [], "Giữ người nói để duy trì niềm tin, chuyển ý hoặc CTA.", "brand-typography-with-caption", 0.9
         source_order = ["owned-assets", "pexels", "pixabay", fallback] if role == "context" else [asset_source, fallback]
         beats.append({"id": f"beat-{index + 1}", "start": round(index * per_beat, 2), "end": round(min(duration, (index + 1) * per_beat), 2), "spoken_meaning": spoken, "visual_role": role, "asset_source": asset_source, "stock_providers": providers, "source_order": source_order, "cut_reason": reason, "minimum_hold_sec": minimum_hold, "caption_treatment": style.get("caption", "clean-two-line"), "text_effect": effects[index % len(effects)], "transition": transitions[index % len(transitions)], "audio_cue": "hook-hit" if index == 0 else "voice-first", "fallback": fallback})
-    plan = {"schema_version": 2, "created_at": now_iso(), "style": style, "domain_pack_id": domain_pack.get("id"), "proof_types": proof_types, "compliance": domain_pack.get("compliance") or [], "duration_seconds": duration, "verification": {"audio_is_timeline_source": True, "semantic_cuts_only": True, "stock_is_context_only": True, "stock_provider_order": ["pexels", "pixabay"], "return_to_presenter_when_asset_ends": True, "rotate_transition_flavors": True, "payoff_hold_min_sec": 1, "require_draft_frame_inspection": True, "require_final_spot_check": True}, "beats": beats, "status": "ready_for_multi_style_edit"}
+    plan = {"schema_version": 2, "created_at": now_iso(), "video_mode": video_mode, "style": style, "domain_pack_id": domain_pack.get("id"), "proof_types": proof_types, "compliance": domain_pack.get("compliance") or [], "duration_seconds": duration, "verification": {"audio_is_timeline_source": True, "semantic_cuts_only": True, "full_visual_coverage_required": video_mode == "noface", "stock_provider_order": ["pexels", "pixabay"], "return_to_presenter_when_asset_ends": video_mode != "noface", "rotate_transition_flavors": True, "payoff_hold_min_sec": 1, "require_draft_frame_inspection": True, "require_final_spot_check": True}, "beats": beats, "status": "ready_for_multi_style_edit"}
     write_json(project_folder / "edit_plan.json", plan)
     return plan
 
@@ -977,6 +1043,63 @@ def _apply_voice_timing(plan: dict[str, Any], timestamp_rows: list[dict[str, Any
     return plan
 
 
+def meaningful_overlay_text(spoken: str, max_words: int = 12) -> str:
+    """Return a complete, useful clause instead of a fixed word fragment."""
+    text = re.sub(r"\s+", " ", str(spoken)).strip()
+    text = re.sub(r"^(hãy\s+(?:nhìn|xem)\s+(?:biểu đồ|sơ đồ)(?:\s+này)?\s*:\s*)", "", text, flags=re.I)
+    clauses = [part.strip(" ,;:-") for part in re.split(r"[.;!?]|\s+[–—]\s+", text) if part.strip(" ,;:-")]
+    candidate = clauses[0] if clauses else text
+    comma_parts = [part.strip() for part in candidate.split(",") if part.strip()]
+    lowered = candidate.lower()
+    if "đường xanh" in lowered and "đường đỏ" in lowered:
+        candidate = ", ".join(comma_parts[:2])
+    elif len(comma_parts) > 2 and comma_parts[1].lower().startswith(("theo báo cáo", "theo nghiên cứu", "theo dữ liệu")):
+        candidate = ", ".join(comma_parts[1:3])
+    elif len(comma_parts) > 1 and len(comma_parts[0].split()) < 6:
+        candidate = ", ".join(comma_parts[:2])
+    elif comma_parts and len(comma_parts[0].split()) >= 4:
+        candidate = comma_parts[0]
+    words = candidate.split()
+    if len(words) <= max_words:
+        return candidate
+    if len(words) <= max_words + 2 and re.search(r"\d", " ".join(words[-2:])):
+        return candidate
+    for end in range(max_words, 5, -1):
+        if words[end - 1].lower() in {"là", "vì", "và", "của", "cho", "với", "theo", "này", "đường"}:
+            continue
+        return " ".join(words[:end]).rstrip(" ,;:-")
+    return " ".join(words[:max_words]).rstrip(" ,;:-")
+
+
+def overlay_suppressed_beat_ids(manifest: dict[str, Any]) -> set[str]:
+    """Technical visuals own their text hierarchy and must not be covered."""
+    return {
+        str(asset.get("beat_id"))
+        for asset in manifest.get("assets", [])
+        if asset.get("overlay_policy") == "suppress" or asset.get("provider") == "brandflow-local"
+    }
+
+
+def latest_reusable_render_version(project_folder: Path, requested_version: int, requested_style_id: str = "") -> int | None:
+    versions = []
+    for candidate in project_folder.glob("final-v*.mp4"):
+        match = re.fullmatch(r"final-v(\d+)\.mp4", candidate.name)
+        if not match:
+            continue
+        version = int(match.group(1))
+        qa = read_json(project_folder / f"render_qa-v{version}.json", {}) or {}
+        plan = read_json(project_folder / f"edit_plan-v{version}.json", {}) or {}
+        completed_style_id = str((plan.get("style") or {}).get("id") or "")
+        if (
+            version >= requested_version
+            and candidate.stat().st_size > 0
+            and qa.get("technical_ok")
+            and (not requested_style_id or completed_style_id == requested_style_id)
+        ):
+            versions.append(version)
+    return max(versions) if versions else None
+
+
 def render_edit(project_folder: Path, payload: dict[str, Any], progress: Callable[[int, str], None], domain: dict[str, Any] | str | None = None) -> dict[str, Any]:
     """Render a versioned MP4 from an approved source; never overwrite an earlier render."""
     source_name = str(payload.get("source_file") or "heygen_source.mp4")
@@ -987,6 +1110,24 @@ def render_edit(project_folder: Path, payload: dict[str, Any], progress: Callabl
     if suffix not in {".mp4", ".mov", ".m4v", ".webm", ".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}:
         raise ValueError("Định dạng video/audio nguồn chưa được hỗ trợ")
     requested_version = max(1, int(payload.get("version") or 1))
+    requested_style_id = str(payload.get("style_id") or "")
+    reusable_version = latest_reusable_render_version(project_folder, requested_version, requested_style_id)
+    if reusable_version is not None:
+        requested_version = reusable_version
+    completed_output = project_folder / f"final-v{requested_version}.mp4"
+    completed_qa = read_json(project_folder / f"render_qa-v{requested_version}.json", {}) or {}
+    completed_plan = read_json(project_folder / f"edit_plan-v{requested_version}.json", {}) or {}
+    if completed_output.is_file() and completed_output.stat().st_size > 0 and completed_qa.get("technical_ok"):
+        progress(100, f"Phiên bản {requested_version} đã dựng xong; đang mở lại kết quả")
+        return {
+            "file": completed_output.name,
+            "version": requested_version,
+            "size": completed_output.stat().st_size,
+            "qa": completed_qa,
+            "edit_plan": completed_plan,
+            "media_manifest": f"media_manifest-v{requested_version}.json",
+            "resumed": True,
+        }
     version = requested_version
     while (project_folder / f"final-v{version}.mp4").exists():
         version += 1
@@ -1032,7 +1173,11 @@ def render_edit(project_folder: Path, payload: dict[str, Any], progress: Callabl
     write_json(project_folder / f"edit_plan-v{version}.json", plan)
     write_json(project_folder / "edit_plan.json", plan)
     progress(43, "Đang chia phụ đề thành các thẻ dễ đọc")
-    _run_engine([python, str(engine_root / "scripts" / "generate_captions.py"), str(timestamps), str(captions)], ROOT.parent, 300)
+    style_palette = plan.get("style", {}).get("palette") or ["#060B16", "#B6FF36", "#F4F7EF"]
+    _run_engine([
+        python, str(engine_root / "scripts" / "generate_captions.py"), str(timestamps), str(captions),
+        str(plan.get("style", {}).get("id") or "editorial-proof"), str(style_palette[1] if len(style_palette) > 1 else "#B6FF36"),
+    ], ROOT.parent, 300)
 
     media_dir = project_folder / f"media-v{version}"
     slots = project_folder / f"broll_slots-v{version}.json"
@@ -1052,14 +1197,14 @@ def render_edit(project_folder: Path, payload: dict[str, Any], progress: Callabl
         "enabled": bool(overlay_input.get("enabled", True)),
         "preset": "finance-editorial",
         "kicker": str(overlay_input.get("kicker") or "ĐIỂM CẦN NHỚ").strip()[:60],
-        "font_size": max(42, min(96, int(overlay_input.get("fontSize") or overlay_input.get("font_size") or 78))),
+        "font_size": max(42, min(72, int(overlay_input.get("fontSize") or overlay_input.get("font_size") or 54))),
         "position": str(overlay_input.get("position") or "top") if str(overlay_input.get("position") or "top") in {"top", "middle", "lower"} else "top",
         "align": str(overlay_input.get("align") or "left") if str(overlay_input.get("align") or "left") in {"left", "center", "right"} else "left",
-        "max_chars_per_line": max(12, min(34, int(overlay_input.get("maxCharsPerLine") or overlay_input.get("max_chars_per_line") or 16))),
+        "max_chars_per_line": max(16, min(34, int(overlay_input.get("maxCharsPerLine") or overlay_input.get("max_chars_per_line") or 24))),
         "text_color": safe_color(overlay_input.get("textColor") or overlay_input.get("text_color"), "#F4F7EF"),
         "accent_color": safe_color(overlay_input.get("accentColor") or overlay_input.get("accent_color"), "#B6FF36"),
         "background_color": safe_color(overlay_input.get("backgroundColor") or overlay_input.get("background_color"), "#060B16"),
-        "background_opacity": max(0.2, min(0.95, float(overlay_input.get("backgroundOpacity") or overlay_input.get("background_opacity") or .72))),
+        "background_opacity": max(0.2, min(0.8, float(overlay_input.get("backgroundOpacity") or overlay_input.get("background_opacity") or .58))),
         "accent_stripe": bool(overlay_input.get("accentStripe", overlay_input.get("accent_stripe", True))),
         "uppercase": bool(overlay_input.get("uppercase", True)),
     }
@@ -1068,13 +1213,15 @@ def render_edit(project_folder: Path, payload: dict[str, Any], progress: Callabl
         custom_lines = custom_lines.splitlines()
     custom_lines = [str(line).strip()[:140] for line in custom_lines if str(line).strip()][:20]
     overlays = []
+    suppressed_overlay_beats = overlay_suppressed_beat_ids(read_json(media_manifest, {}) or {})
     if overlay_settings["enabled"]:
         for beat in plan.get("beats", []):
             if beat.get("visual_role") not in {"proof", "metaphor"}:
                 continue
-            words = str(beat.get("spoken_meaning") or "").split()
+            if str(beat.get("id")) in suppressed_overlay_beats:
+                continue
             custom_index = len(overlays)
-            headline = custom_lines[custom_index] if custom_index < len(custom_lines) else " ".join(words[:6])
+            headline = custom_lines[custom_index] if custom_index < len(custom_lines) else meaningful_overlay_text(beat.get("spoken_meaning") or "")
             overlays.append({"kicker": overlay_settings["kicker"], "text": headline, "start": beat.get("start", 0), "end": beat.get("end", 0)})
     overlays_path = project_folder / f"text_overlays-v{version}.json"
     plan["text_overlay"] = {**overlay_settings, "items": overlays}

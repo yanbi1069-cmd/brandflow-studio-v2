@@ -40,6 +40,9 @@ def search_portrait_asset(query: str, used_urls: set | None = None, api_key: str
     data = resp.json()
 
     for hit in data.get("hits", []):
+        asset_key = f"pixabay:{hit.get('id')}"
+        if used_urls and asset_key in used_urls:
+            continue
         variants = [v for v in hit.get("videos", {}).values()
                     if (v.get("height") or 0) > (v.get("width") or 0)]
         variants.sort(key=lambda v: abs((v.get("width") or 720) - 720))

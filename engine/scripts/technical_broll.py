@@ -31,7 +31,7 @@ FONT_SB = Path(r"C:\Windows\Fonts\Montserrat-SemiBold.ttf")
 
 
 def normalize(value: str) -> str:
-    value = unicodedata.normalize("NFKD", str(value).lower())
+    value = unicodedata.normalize("NFKD", str(value).lower().replace("đ", "d"))
     value = "".join(char for char in value if not unicodedata.combining(char))
     return re.sub(r"[^a-z0-9]+", " ", value).strip()
 
@@ -86,16 +86,38 @@ def rounded(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], fill: str
     draw.rounded_rectangle(box, radius=30, fill=fill, outline=outline, width=width)
 
 
-def base_frame(kind: str, accent: str) -> Image.Image:
-    image = Image.new("RGBA", (W, H), BG)
+def resolve_theme(palette: list[str] | None, style_id: str) -> dict[str, str]:
+    values = palette or [BG, LIME, INK]
+    background = values[0] if len(values) > 0 else BG
+    accent = values[1] if len(values) > 1 else LIME
+    ink = values[2] if len(values) > 2 else INK
+    overrides = {
+        "editorial-proof": {"background": "#060B16", "accent": "#B6FF36", "ink": "#F4F7EF"},
+        "soft-signal": {"background": "#183029", "accent": "#F5A623", "ink": "#FFF8EC"},
+        "folk-frequency": {"background": "#0047AB", "accent": "#FF1493", "ink": "#FFE000"},
+        "visual-metaphor": {"background": "#18201B", "accent": "#FFCB69", "ink": "#FFF8E7"},
+    }
+    return overrides.get(style_id, {"background": background, "accent": accent, "ink": ink})
+
+
+def base_frame(kind: str, accent: str, beat: dict[str, Any] | None = None) -> Image.Image:
+    theme = (beat or {}).get("_theme") or {"background": BG, "ink": INK}
+    background = theme.get("background", BG)
+    ink = theme.get("ink", INK)
+    style_id = str((beat or {}).get("_style_id") or "editorial-proof")
+    image = Image.new("RGBA", (W, H), background)
     draw = ImageDraw.Draw(image, "RGBA")
+    base_rgb = tuple(int(background[index:index + 2], 16) for index in (1, 3, 5))
     for y in range(H):
         ratio = y / H
-        draw.line((0, y, W, y), fill=(6 + int(6 * ratio), 11 + int(7 * ratio), 22 + int(14 * ratio), 255))
-    for x in range(0, W, 90):
-        draw.line((x, 430, x, 1510), fill=(54, 73, 96, 48), width=1)
-    for y in range(430, 1511, 90):
-        draw.line((0, y, W, y), fill=(54, 73, 96, 48), width=1)
+        draw.line((0, y, W, y), fill=tuple(min(255, channel + int(12 * ratio)) for channel in base_rgb) + (255,))
+    if style_id in {"editorial-proof", "data-kinetic", "swiss-pulse", "screen-demo", "data-drift"}:
+        for x in range(0, W, 90):
+            draw.line((x, 430, x, 1510), fill=(100, 120, 148, 42), width=1)
+        for y in range(430, 1511, 90):
+            draw.line((0, y, W, y), fill=(100, 120, 148, 42), width=1)
+    elif style_id in {"bold-social", "deconstructed", "maximalist-type"}:
+        draw.rectangle((0, 0, 18, H), fill=accent)
     light = Image.new("RGBA", image.size, (0, 0, 0, 0))
     ImageDraw.Draw(light).ellipse((720, -280, 1280, 280), fill=(182, 255, 54, 18))
     image.alpha_composite(light)
@@ -111,21 +133,52 @@ def classify_visual(beat: dict[str, Any]) -> str:
     source = normalize(beat.get("asset_source") or beat.get("assetSource") or "")
     if "ly nuoc" in text or "mep ban" in text:
         return "glass-metaphor"
-    if "nfp" in text or "tin tuc" in text or "bao cao" in text:
+    if any(word in text for word in ("nfp", "tin tuc", "bao cao", "nghien cuu", "pitchbook", "mckinsey")):
         return "signal-dashboard"
-    if any(word in text for word in ("gia ", "vang", "tang", "giam", "xu huong", "phuc hoi", "thanh khoan", "thi truong", "doanh thu", "loi nhuan")):
+    if any(word in text for word in ("bieu do", "duong xanh", "duong do", "gia ", "vang", "xu huong", "phuc hoi", "thanh khoan", "thi truong")):
         return "market-chart"
     if any(word in source for word in ("before after", "comparison")) or any(word in text for word in ("truoc", "sau", "so sanh", "ket qua")):
         return "comparison"
-    if any(word in source for word in ("screen demo", "dashboard")) or any(word in text for word in ("man hinh", "bao cao", "du lieu", "nfp", "tin tuc")):
+    if any(word in source for word in ("screen demo", "dashboard")) or any(word in text for word in ("man hinh", "bao cao", "du lieu", "nghien cuu", "nfp", "tin tuc", "pitchbook", "mckinsey")):
         return "signal-dashboard"
     if any(word in text for word in ("quy trinh", "buoc", "dau vao", "dau ra", "he thong", "co che")):
         return "workflow"
     return "mechanism"
 
 
+def visual_variant(kind: str, beat: dict[str, Any]) -> str:
+    """Choose a claim-shaped layout, not merely a different headline."""
+    text = normalize(beat.get("spoken_meaning") or beat.get("spokenMeaning") or "")
+    if kind == "signal-dashboard":
+        if "giam" in text or "pitchbook" in text:
+            return "report-decline"
+        if re.search(r"\d+\s*%", text) or "mckinsey" in text:
+            return "source-stat"
+        return "evidence-network"
+    if kind == "market-chart":
+        if "duong xanh" in text or "duong do" in text:
+            return "head-to-head"
+        if "chi phi" in text and "doanh thu" in text:
+            return "dual-series"
+        return "trend-line"
+    return kind
+
+
+def percent_from_beat(beat: dict[str, Any], fallback: str = "--") -> str:
+    match = re.search(r"\d+(?:[.,]\d+)?\s*%", str(beat.get("spoken_meaning") or ""))
+    return match.group(0).replace(" ", "") if match else fallback
+
+
+def source_from_beat(beat: dict[str, Any]) -> str:
+    text = str(beat.get("spoken_meaning") or "")
+    for source in ("McKinsey", "PitchBook", "NFP"):
+        if source.lower() in text.lower():
+            return source.upper()
+    return "VERIFIED SOURCE"
+
+
 def market_frame(progress: float, beat: dict[str, Any], accent: str) -> Image.Image:
-    image = base_frame("market / trend", accent)
+    image = base_frame("market / trend", accent, beat)
     draw = ImageDraw.Draw(image, "RGBA")
     spoken = normalize(beat.get("spoken_meaning") or "")
     draw.text((72, 555), "DIỄN BIẾN → PHẢN ỨNG", font=font(46), fill=INK)
@@ -153,8 +206,47 @@ def market_frame(progress: float, beat: dict[str, Any], accent: str) -> Image.Im
     return image
 
 
+def dual_series_frame(progress: float, beat: dict[str, Any], accent: str) -> Image.Image:
+    image = base_frame("cost / revenue", accent, beat)
+    draw = ImageDraw.Draw(image, "RGBA")
+    draw.text((72, 555), "COST vs REVENUE", font=font(48), fill=INK)
+    rounded(draw, (76, 680, 1004, 1390), "#0D1726", "#263A52")
+    for x in range(145, 960, 135):
+        draw.line((x, 750, x, 1320), fill=(74, 94, 120, 70), width=1)
+    for y in range(780, 1321, 110):
+        draw.line((135, y, 950, y), fill=(74, 94, 120, 70), width=1)
+    cost = [(140, 1220), (300, 1110), (460, 990), (620, 850), (780, 690), (945, 570)]
+    revenue = [(140, 1200), (300, 1150), (460, 1100), (620, 1040), (780, 965), (945, 900)]
+    count = max(2, round(2 + ease(progress) * 4))
+    glow_line(image, cost[:count], RED, 9)
+    glow_line(image, revenue[:count], accent, 9)
+    draw = ImageDraw.Draw(image, "RGBA")
+    draw.ellipse((120, 1475, 150, 1505), fill=RED)
+    draw.text((170, 1470), "GPU COST +300%", font=font(28), fill=INK)
+    draw.ellipse((560, 1475, 590, 1505), fill=accent)
+    draw.text((610, 1470), "REVENUE +45%", font=font(28), fill=INK)
+    return image
+
+
+def head_to_head_frame(progress: float, beat: dict[str, Any], accent: str) -> Image.Image:
+    image = base_frame("head / to / head", accent, beat)
+    draw = ImageDraw.Draw(image, "RGBA")
+    draw.text((72, 555), "TWO OUTCOMES", font=font(48), fill=INK)
+    cards = [("ANIMAI", RED, 0.38), ("AIQ", accent, 0.78)]
+    for index, (label, color, ratio) in enumerate(cards):
+        x1 = 76 + index * 476
+        rounded(draw, (x1, 690, x1 + 428, 1390), "#0D1726", color, 4)
+        draw.text((x1 + 214, 765), label, font=font(38), fill=color, anchor="mm")
+        height = int(470 * ratio * ease(progress))
+        draw.rounded_rectangle((x1 + 105, 1280 - height, x1 + 323, 1280), radius=22, fill=color)
+        arrow = "DOWN" if index == 0 else "UP"
+        draw.text((x1 + 214, 1330), arrow, font=font(29), fill=INK, anchor="mm")
+    draw.text((540, 1515), "SAME THEME. DIFFERENT RISK.", font=font(30, False), fill=MUTED, anchor="mm")
+    return image
+
+
 def glass_frame(progress: float, beat: dict[str, Any], accent: str) -> Image.Image:
-    image = base_frame("physical / metaphor", accent)
+    image = base_frame("physical / metaphor", accent, beat)
     draw = ImageDraw.Draw(image, "RGBA")
     draw.text((72, 555), "ÁP LỰC KHÔNG PHẢI KẾT CỤC", font=fit_font(draw, "ÁP LỰC KHÔNG PHẢI KẾT CỤC", 930, 45), fill=INK)
     rounded(draw, (76, 660, 1004, 1420), "#0D1726", "#263A52")
@@ -180,7 +272,7 @@ def glass_frame(progress: float, beat: dict[str, Any], accent: str) -> Image.Ima
 
 
 def comparison_frame(progress: float, beat: dict[str, Any], accent: str) -> Image.Image:
-    image = base_frame("before / after", accent)
+    image = base_frame("before / after", accent, beat)
     draw = ImageDraw.Draw(image, "RGBA")
     draw.text((72, 555), "SO SÁNH HAI TRẠNG THÁI", font=font(46), fill=INK)
     labels = [("PHẢN ỨNG", "VỘI VÀNG", RED), ("KIỂM CHỨNG", "CÓ BỐI CẢNH", accent)]
@@ -198,7 +290,7 @@ def comparison_frame(progress: float, beat: dict[str, Any], accent: str) -> Imag
 
 
 def signal_frame(progress: float, beat: dict[str, Any], accent: str) -> Image.Image:
-    image = base_frame("signal / evidence", accent)
+    image = base_frame("signal / evidence", accent, beat)
     draw = ImageDraw.Draw(image, "RGBA")
     draw.text((72, 555), "ĐỌC TÍN HIỆU TRONG BỐI CẢNH", font=fit_font(draw, "ĐỌC TÍN HIỆU TRONG BỐI CẢNH", 920, 46), fill=INK)
     center = (540, 1020)
@@ -217,8 +309,44 @@ def signal_frame(progress: float, beat: dict[str, Any], accent: str) -> Image.Im
     return image
 
 
+def source_stat_frame(progress: float, beat: dict[str, Any], accent: str) -> Image.Image:
+    image = base_frame("source / statistic", accent, beat)
+    draw = ImageDraw.Draw(image, "RGBA")
+    source = source_from_beat(beat)
+    value = percent_from_beat(beat)
+    draw.text((72, 555), source, font=font(36, False), fill=accent)
+    draw.text((72, 640), "REPORTED OUTCOME", font=font(47), fill=INK)
+    rounded(draw, (76, 790, 1004, 1390), "#0D1726", "#263A52")
+    scale = 0.82 + 0.18 * ease(progress)
+    value_font = font(int(190 * scale))
+    draw.text((540, 1015), value, font=value_font, fill=accent, anchor="mm")
+    draw.text((540, 1195), "PROJECTS WITH POSITIVE RETURN", font=fit_font(draw, "PROJECTS WITH POSITIVE RETURN", 760, 33), fill=INK, anchor="mm")
+    width = int(780 * 0.12 * ease(progress))
+    draw.rounded_rectangle((150, 1290, 930, 1345), radius=22, fill="#233044")
+    draw.rounded_rectangle((150, 1290, 150 + max(12, width), 1345), radius=22, fill=accent)
+    return image
+
+
+def report_decline_frame(progress: float, beat: dict[str, Any], accent: str) -> Image.Image:
+    image = base_frame("report / decline", accent, beat)
+    draw = ImageDraw.Draw(image, "RGBA")
+    source = source_from_beat(beat)
+    value = percent_from_beat(beat, "60%")
+    draw.text((72, 555), source + " REPORT", font=font(42), fill=INK)
+    rounded(draw, (92, 685, 988, 1450), "#F1F3F5", "#263A52", 4)
+    draw.rectangle((140, 750, 940, 845), fill="#DCE2E8")
+    draw.text((175, 774), "VALUATION REVIEW", font=font(27), fill="#172234")
+    for y, width in ((910, 650), (985, 730), (1060, 520)):
+        draw.rounded_rectangle((155, y, 155 + width, y + 25), radius=10, fill="#AAB4C0")
+    reveal = int(310 * ease(progress))
+    draw.rounded_rectangle((170, 1340 - reveal, 390, 1340), radius=18, fill=RED)
+    draw.text((610, 1130), value, font=font(135), fill=RED, anchor="mm")
+    draw.text((610, 1265), "VALUATION", font=font(30), fill="#172234", anchor="mm")
+    return image
+
+
 def workflow_frame(progress: float, beat: dict[str, Any], accent: str) -> Image.Image:
-    image = base_frame("mechanism / flow", accent)
+    image = base_frame("mechanism / flow", accent, beat)
     draw = ImageDraw.Draw(image, "RGBA")
     draw.text((72, 555), "MỘT CƠ CHẾ · BA BƯỚC", font=font(46), fill=INK)
     items = [("01", "TÍN HIỆU", BLUE), ("02", "KIỂM CHỨNG", YELLOW), ("03", "HÀNH ĐỘNG", accent)]
@@ -235,12 +363,17 @@ def workflow_frame(progress: float, beat: dict[str, Any], accent: str) -> Image.
     return image
 
 
-def render_technical_clip(beat: dict[str, Any], output_path: Path, palette: list[str] | None = None) -> dict[str, Any]:
+def render_technical_clip(beat: dict[str, Any], output_path: Path, palette: list[str] | None = None, style_id: str = "editorial-proof") -> dict[str, Any]:
+    global INK
     start = float(beat.get("start") or 0)
     end = float(beat.get("end") or start + 1)
     duration = max(0.9, end - start)
-    kind = classify_visual(beat)
-    accent = (palette or [BG, LIME, INK])[1] if len(palette or []) > 1 else LIME
+    theme = resolve_theme(palette, style_id)
+    INK = theme["ink"]
+    render_beat = {**beat, "_theme": theme, "_style_id": style_id}
+    kind = classify_visual(render_beat)
+    variant = visual_variant(kind, render_beat)
+    accent = theme["accent"]
     renderer = {
         "market-chart": market_frame,
         "glass-metaphor": glass_frame,
@@ -249,6 +382,12 @@ def render_technical_clip(beat: dict[str, Any], output_path: Path, palette: list
         "workflow": workflow_frame,
         "mechanism": workflow_frame,
     }[kind]
+    renderer = {
+        "dual-series": dual_series_frame,
+        "head-to-head": head_to_head_frame,
+        "source-stat": source_stat_frame,
+        "report-decline": report_decline_frame,
+    }.get(variant, renderer)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     command = [
         "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
@@ -263,7 +402,7 @@ def render_technical_clip(beat: dict[str, Any], output_path: Path, palette: list
     try:
         for index in range(frame_count):
             progress = index / max(1, frame_count - 1)
-            process.stdin.write(renderer(progress, beat, accent).convert("RGB").tobytes())
+            process.stdin.write(renderer(progress, render_beat, accent).convert("RGB").tobytes())
     finally:
         process.stdin.close()
     error = (process.stderr.read() if process.stderr else b"").decode("utf-8", errors="replace")
@@ -271,6 +410,10 @@ def render_technical_clip(beat: dict[str, Any], output_path: Path, palette: list
         raise RuntimeError(f"Không thể tạo B-roll kỹ thuật: {error[-1200:]}")
     return {
         "kind": kind,
+        "visual_variant": variant,
+        "style_id": style_id,
+        "theme": theme,
+        "overlay_policy": "suppress",
         "duration": round(frame_count / FPS, 3),
         "generator": "brandflow-technical-motion-v1",
         "fingerprint": hashlib.sha256(str(beat.get("spoken_meaning") or "").encode("utf-8")).hexdigest()[:12],

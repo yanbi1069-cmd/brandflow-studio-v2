@@ -1,7 +1,7 @@
 """Prepare contextual B-roll with traceable Pexels -> Pixabay fallback.
 
-Only beats marked ``context`` are sent to stock providers. Proof, metaphor,
-presenter, hook and CTA beats remain owned/designed/source-video visuals.
+Context beats are sent to stock providers. Proof and metaphor beats use local
+motion graphics. No-face plans require a visual slot for every voice beat.
 Pixabay selections are cached for at least 24 hours as required by its API.
 No API key is ever written to a manifest or cache file.
 """
@@ -42,7 +42,7 @@ def safe_query(value: str) -> str:
 
 
 def normalized_text(value: str) -> str:
-    value = unicodedata.normalize("NFKD", str(value).lower())
+    value = unicodedata.normalize("NFKD", str(value).lower().replace("đ", "d"))
     value = "".join(character for character in value if not unicodedata.combining(character))
     return re.sub(r"[^a-z0-9]+", " ", value).strip()
 
@@ -57,6 +57,15 @@ def semantic_stock_query(beat: dict[str, Any], domain_id: str = "") -> tuple[str
     explicit = str(beat.get("assetQuery") or beat.get("asset_query") or "").strip()
     normalized = normalized_text(explicit or spoken)
     mappings = [
+        (("video hoat hinh", "ai video", "tao sinh"), "video editor computer", "ai-creative-context"),
+        (("gpu", "chi phi van hanh", "du lieu dao tao"), "data center servers", "data-center-context"),
+        (("startup", "huy dong", "quy sequoia"), "startup investor meeting", "startup-investment-context"),
+        (("90 nha dau tu", "nha dau tu ai", "thua lo"), "worried investor reviewing losses on laptop", "investor-loss-context"),
+        (("5 danh muc", "10 danh muc", "phan bo", "etf"), "planning investment portfolio", "portfolio-planning-context"),
+        (("bao cao tai chinh", "hang quy", "pitchbook"), "analyst reading financial report on computer", "financial-report-context"),
+        (("theo doi", "tin tai chinh"), "person following financial news on smartphone", "finance-news-context"),
+        (("mot cong ty", "duy nhat", "bai hoc"), "diversified investment portfolio", "diversification-context"),
+        (("giao duc", "khuyen nghi dau tu"), "person learning personal finance", "education-disclaimer-context"),
         (("ly nuoc", "mep ban", "day ly", "cham mep"), "hand pushing glass of water near table edge close up", "physical-metaphor"),
         (("khach hang", "tu van"), "business consultant meeting client office", "client-context"),
         (("hoc vien", "dao tao", "lop hoc"), "adult students learning in modern classroom", "education-context"),
@@ -81,7 +90,8 @@ def cached_asset(cache_dir: Path, provider: str, query: str, used_urls: set[str]
     if not path.is_file() or time.time() - path.stat().st_mtime > CACHE_TTL_SECONDS:
         return None
     asset = read_json(path)
-    return asset if asset.get("download_url") not in used_urls else None
+    identity = f"{asset.get('provider')}:{asset.get('id')}"
+    return asset if asset.get("download_url") not in used_urls and identity not in used_urls else None
 
 
 def select_asset(query: str, cache_dir: Path, used_urls: set[str], providers: list[str] | None = None) -> tuple[dict | None, list[dict]]:
@@ -111,6 +121,20 @@ def select_asset(query: str, cache_dir: Path, used_urls: set[str], providers: li
     return None, attempts
 
 
+def close_noface_gaps(slots: list[dict], duration: float) -> list[dict]:
+    """Extend adjacent visuals to a shared boundary so no-face never shows a blank frame."""
+    ordered = sorted(slots, key=lambda item: (float(item["start"]), float(item["end"])))
+    if not ordered:
+        return ordered
+    ordered[0]["start"] = 0.0
+    for previous, current in zip(ordered, ordered[1:]):
+        boundary = round((float(previous["end"]) + float(current["start"])) / 2, 3)
+        previous["end"] = boundary
+        current["start"] = boundary
+    ordered[-1]["end"] = round(duration, 3)
+    return ordered
+
+
 def prepare_context_broll(edit_plan_path: Path, media_dir: Path, slots_path: Path, manifest_path: Path, dry_run: bool = False) -> dict:
     plan = read_json(edit_plan_path)
     cache_dir = media_dir.parent / ".stock-cache"
@@ -119,7 +143,9 @@ def prepare_context_broll(edit_plan_path: Path, media_dir: Path, slots_path: Pat
     assets: list[dict] = []
     fallbacks: list[dict] = []
     palette = (plan.get("style") or {}).get("palette") or []
+    style_id = str((plan.get("style") or {}).get("id") or "editorial-proof")
     domain_id = str(plan.get("domain_pack_id") or "")
+    noface = str(plan.get("video_mode") or "") == "noface"
     beats_by_id = {str(beat.get("id")): beat for beat in plan.get("beats", [])}
     for beat in plan.get("beats", []):
         role = beat.get("visualRole") or beat.get("visual_role")
@@ -131,7 +157,7 @@ def prepare_context_broll(edit_plan_path: Path, media_dir: Path, slots_path: Pat
                 continue
             output = media_dir / "chartanimator" / f"{name}.mp4"
             try:
-                technical = technical_broll.render_technical_clip(beat, output, palette)
+                technical = technical_broll.render_technical_clip(beat, output, palette, style_id)
             except Exception as error:
                 fallbacks.append({"beat_id": beat.get("id"), "status": "technical-render-error-use-presenter", "message": str(error)[:240]})
                 continue
@@ -147,7 +173,10 @@ def prepare_context_broll(edit_plan_path: Path, media_dir: Path, slots_path: Pat
             })
             continue
         if role != "context":
-            continue
+            if noface:
+                role = "context"
+            else:
+                continue
         query, intent = semantic_stock_query(beat, domain_id)
         if intent == "physical-metaphor":
             if dry_run:
@@ -159,7 +188,7 @@ def prepare_context_broll(edit_plan_path: Path, media_dir: Path, slots_path: Pat
                 extended = {**carrier, "start": slots[-1]["start"], "end": end}
                 source = media_dir.parent / str(previous["file"])
                 try:
-                    technical = technical_broll.render_technical_clip(extended, source, palette)
+                    technical = technical_broll.render_technical_clip(extended, source, palette, style_id)
                 except Exception as error:
                     fallbacks.append({"beat_id": beat.get("id"), "status": "metaphor-extend-error-use-presenter", "message": str(error)[:240]})
                     continue
@@ -170,7 +199,7 @@ def prepare_context_broll(edit_plan_path: Path, media_dir: Path, slots_path: Pat
                 continue
             output = media_dir / "chartanimator" / f"{name}.mp4"
             try:
-                technical = technical_broll.render_technical_clip(beat, output, palette)
+                technical = technical_broll.render_technical_clip(beat, output, palette, style_id)
             except Exception as error:
                 fallbacks.append({"beat_id": beat.get("id"), "status": "metaphor-render-error-use-presenter", "message": str(error)[:240]})
                 continue
@@ -187,7 +216,16 @@ def prepare_context_broll(edit_plan_path: Path, media_dir: Path, slots_path: Pat
             })
             continue
         if not query:
-            fallbacks.append({"beat_id": beat.get("id"), "status": "no-concrete-visual-use-presenter", "spoken_meaning": str(beat.get("spoken_meaning") or "")[:140]})
+            if not noface:
+                fallbacks.append({"beat_id": beat.get("id"), "status": "no-concrete-visual-use-presenter", "spoken_meaning": str(beat.get("spoken_meaning") or "")[:140]})
+                continue
+            output = media_dir / "chartanimator" / f"{name}.mp4"
+            if dry_run:
+                fallbacks.append({"beat_id": beat.get("id"), "status": "planned-local-noface-fallback"})
+                continue
+            technical = technical_broll.render_technical_clip(beat, output, palette, style_id)
+            slots.append({"name": name, "type": "chart", "start": start, "end": end, "visual_role": "context"})
+            assets.append({"provider": "brandflow-local", "file": str(output.relative_to(media_dir.parent)).replace("\\", "/"), "usage": "noface-coverage-fallback", "beat_id": beat.get("id"), "start": start, "end": end, **technical})
             continue
         query = safe_query(query)
         providers = beat.get("stockProviders") or beat.get("stock_providers") or ["pexels", "pixabay"]
@@ -196,16 +234,26 @@ def prepare_context_broll(edit_plan_path: Path, media_dir: Path, slots_path: Pat
             continue
         asset, attempts = select_asset(query, cache_dir, used_urls, providers)
         if not asset:
-            fallbacks.append({"beat_id": beat.get("id"), "query": query, "status": "use-presenter-or-typography", "attempts": attempts})
+            if not noface:
+                fallbacks.append({"beat_id": beat.get("id"), "query": query, "status": "use-presenter-or-typography", "attempts": attempts})
+                continue
+            output = media_dir / "chartanimator" / f"{name}.mp4"
+            technical = technical_broll.render_technical_clip(beat, output, palette, style_id)
+            slots.append({"name": name, "type": "chart", "start": start, "end": end, "visual_role": "context"})
+            assets.append({"provider": "brandflow-local", "file": str(output.relative_to(media_dir.parent)).replace("\\", "/"), "usage": "noface-stock-fallback", "query": query, "attempts": attempts, "beat_id": beat.get("id"), "start": start, "end": end, **technical})
             continue
         provider = asset["provider"]
         output = media_dir / provider / f"{name}.mp4"
         PROVIDERS[provider].download_video(asset["download_url"], str(output))
         used_urls.add(asset["download_url"])
+        used_urls.add(f"{provider}:{asset.get('id')}")
         slots.append({"name": name, "type": provider, "start": start, "end": end, "visual_role": role})
         assets.append({**{k: v for k, v in asset.items() if k != "download_url"}, "query": query, "intent": intent, "file": str(output.relative_to(media_dir.parent)).replace("\\", "/"), "usage": "context-broll", "beat_id": beat.get("id"), "start": start, "end": end, "attempts": attempts})
+    if noface:
+        slots = close_noface_gaps(slots, float(plan.get("duration_seconds") or 0))
     write_json(slots_path, {"slots": slots})
-    manifest = {"schema_version": 2, "provider_order": ["brandflow-local-technical", "owned-assets", "pexels", "pixabay", "presenter-or-typography"], "stock_is_context_only": True, "technical_proof_is_generated": True, "assets": assets, "fallbacks": fallbacks}
+    coverage = sum(max(0.0, float(slot["end"]) - float(slot["start"])) for slot in slots)
+    manifest = {"schema_version": 2, "provider_order": ["brandflow-local-technical", "owned-assets", "pexels", "pixabay", "local-noface-fallback"], "stock_is_context_only": True, "technical_proof_is_generated": True, "full_visual_coverage_required": noface, "covered_seconds": round(coverage, 3), "assets": assets, "fallbacks": fallbacks}
     write_json(manifest_path, manifest)
     return manifest
 

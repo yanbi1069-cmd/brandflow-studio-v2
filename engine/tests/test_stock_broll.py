@@ -7,11 +7,17 @@ import sys
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 import compose_video
+import generate_captions
 import stock_broll
 import technical_broll
 
 
 class StockBrollTests(unittest.TestCase):
+    def test_vietnamese_d_stroke_is_normalized_for_visual_matching(self):
+        query, intent = stock_broll.semantic_stock_query({"spoken_meaning": "Hãy dùng 10% danh mục cho ETF AI"}, "finance")
+        self.assertEqual(intent, "portfolio-planning-context")
+        self.assertTrue(query)
+
     def test_dry_run_only_plans_context_beats(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -60,11 +66,33 @@ class StockBrollTests(unittest.TestCase):
         })
         self.assertEqual(kind, "glass-metaphor")
 
+    def test_noface_slots_cover_the_complete_timeline(self):
+        slots = [
+            {"name": "a", "start": 0.4, "end": 2.0},
+            {"name": "b", "start": 2.6, "end": 4.1},
+            {"name": "c", "start": 4.5, "end": 5.4},
+        ]
+        result = stock_broll.close_noface_gaps(slots, 6.0)
+        self.assertEqual(result[0]["start"], 0.0)
+        self.assertEqual(result[-1]["end"], 6.0)
+        self.assertTrue(all(left["end"] == right["start"] for left, right in zip(result, result[1:])))
+
     def test_news_claim_uses_signal_visual_not_repeated_market_chart(self):
         kind = technical_broll.classify_visual({
             "spoken_meaning": "Tin NFP mạnh bất ngờ nhưng xu hướng vẫn tăng."
         })
         self.assertEqual(kind, "signal-dashboard")
+
+    def test_different_proofs_get_different_visual_layouts(self):
+        gpu = {"spoken_meaning": "Biểu đồ: chi phí GPU tăng 300%, doanh thu tăng 45%."}
+        funds = {"spoken_meaning": "Biểu đồ: đường xanh là AnimAI, đường đỏ là AIQ."}
+        report = {"spoken_meaning": "Theo báo cáo McKinsey, chỉ 12% dự án có lợi nhuận."}
+        decline = {"spoken_meaning": "Theo báo cáo PitchBook, giá trị giảm 60%."}
+        variants = {
+            technical_broll.visual_variant(technical_broll.classify_visual(beat), beat)
+            for beat in (gpu, funds, report, decline)
+        }
+        self.assertEqual(variants, {"dual-series", "head-to-head", "source-stat", "report-decline"})
 
     def test_renderer_resolves_pixabay_and_stock_fallback(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -74,6 +102,22 @@ class StockBrollTests(unittest.TestCase):
             clip.write_bytes(b"test")
             self.assertEqual(Path(compose_video.find_broll_source("life", str(media), "pixabay")), clip)
             self.assertEqual(Path(compose_video.find_broll_source("life", str(media), "stock")), clip)
+
+    def test_cached_stock_is_rejected_when_asset_id_was_already_used(self):
+        with tempfile.TemporaryDirectory() as temp:
+            cache = Path(temp)
+            query = "startup investor meeting"
+            asset = {"provider": "pexels", "id": "7413784", "download_url": "https://example/video.mp4"}
+            stock_broll.write_json(stock_broll.cache_path(cache, "pexels", query), asset)
+            self.assertIsNone(stock_broll.cached_asset(cache, "pexels", query, {"pexels:7413784"}))
+
+    def test_selected_style_changes_theme_caption_and_footage_grade(self):
+        editorial = technical_broll.resolve_theme(["#000000", "#111111", "#222222"], "editorial-proof")
+        warm = technical_broll.resolve_theme(["#2A1713", "#F29E72", "#FFF2E6"], "warm-story")
+        self.assertEqual(editorial["accent"], "#B6FF36")
+        self.assertEqual(warm["accent"], "#F29E72")
+        self.assertNotEqual(generate_captions.caption_profile("warm-story", warm["accent"]), generate_captions.caption_profile("bold-social", "#FF5C35"))
+        self.assertNotEqual(compose_video.style_grade_filter("warm-story"), compose_video.style_grade_filter("shadow-cut"))
 
 
 if __name__ == "__main__":

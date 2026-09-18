@@ -54,14 +54,43 @@ def find_broll_source(slot_name: str, chart_dir: str, slot_type: str = "chart") 
     raise FileNotFoundError(f"No B-roll source found for slot '{slot_name}' in {chart_dir}")
 
 
-def normalize_broll_clip(source_path: str, target_duration: float, output_path: str):
+def style_grade_filter(style_id: str) -> str:
+    """Apply the selected art direction to photographic footage."""
+    grades = {
+        "editorial-proof": "eq=contrast=1.08:saturation=0.92:brightness=-0.015",
+        "clean-expert": "eq=contrast=0.96:saturation=0.82:brightness=0.025",
+        "warm-story": "eq=contrast=0.98:saturation=1.10:brightness=0.025",
+        "luxury-minimal": "eq=contrast=1.14:saturation=0.72:brightness=-0.025",
+        "bold-social": "eq=contrast=1.15:saturation=1.24:brightness=0.005",
+        "tiktok-creator": "eq=contrast=1.10:saturation=1.18:brightness=0.01",
+        "screen-demo": "eq=contrast=1.05:saturation=0.88:brightness=0.01",
+        "data-kinetic": "eq=contrast=1.12:saturation=0.86:brightness=-0.02",
+        "visual-metaphor": "eq=contrast=1.04:saturation=1.04:brightness=0.005",
+        "documentary-reveal": "eq=contrast=1.18:saturation=0.62:brightness=-0.035",
+        "swiss-pulse": "eq=contrast=1.12:saturation=0.82:brightness=0.015",
+        "velvet-standard": "eq=contrast=1.16:saturation=0.66:brightness=-0.035",
+        "deconstructed": "eq=contrast=1.24:saturation=0.72:brightness=-0.035",
+        "maximalist-type": "eq=contrast=1.18:saturation=1.30:brightness=0.005",
+        "data-drift": "eq=contrast=1.14:saturation=1.12:brightness=-0.03",
+        "soft-signal": "eq=contrast=0.94:saturation=0.92:brightness=0.04",
+        "folk-frequency": "eq=contrast=1.08:saturation=1.28:brightness=0.015",
+        "shadow-cut": "eq=contrast=1.30:saturation=0.42:brightness=-0.07",
+    }
+    return grades.get(style_id, grades["editorial-proof"])
+
+
+def normalize_broll_clip(source_path: str, target_duration: float, output_path: str, style_id: str = "editorial-proof", apply_grade: bool = False):
     """Normalize any PNG or MP4 source into a 720x1280/25fps clip of exact target_duration."""
     ext = os.path.splitext(source_path)[1].lower()
+
+    visual_filters = f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1,fps={FPS}"
+    if apply_grade:
+        visual_filters += "," + style_grade_filter(style_id)
 
     if ext in (".png", ".jpg", ".jpeg"):
         cmd = [
             "ffmpeg", "-y", "-loop", "1", "-t", f"{target_duration}", "-i", source_path,
-            "-vf", f"scale={W}:{H},setsar=1,fps={FPS}",
+            "-vf", visual_filters,
             "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", output_path
         ]
     elif ext == ".mp4":
@@ -69,14 +98,14 @@ def normalize_broll_clip(source_path: str, target_duration: float, output_path: 
         if src_dur >= target_duration:
             cmd = [
                 "ffmpeg", "-y", "-i", source_path, "-t", f"{target_duration}",
-                "-vf", f"scale={W}:{H},setsar=1,fps={FPS}",
+                "-vf", visual_filters,
                 "-an", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", output_path
             ]
         else:
             pad = target_duration - src_dur
             cmd = [
                 "ffmpeg", "-y", "-i", source_path,
-                "-vf", f"scale={W}:{H},setsar=1,fps={FPS},tpad=stop_mode=clone:stop_duration={pad}",
+                "-vf", f"{visual_filters},tpad=stop_mode=clone:stop_duration={pad}",
                 "-t", f"{target_duration}",
                 "-an", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", output_path
             ]
@@ -94,8 +123,10 @@ def escape_drawtext(text: str) -> str:
     (see build_text_overlay_filters), which lets '%' pass through literally.
     Escaping it as \\% causes a "Stray %" parse error that silently drops
     the whole filter (confirmed via isolated ffmpeg test)."""
-    return (text.replace("\\", "\\\\").replace(":", "\\:")
-                .replace("'", "\\'"))
+    # A backslash-escaped ASCII apostrophe can still terminate FFmpeg's
+    # single-quoted filter value on Windows. The typographic apostrophe is
+    # visually equivalent and does not alter filtergraph parsing.
+    return text.replace("'", "’").replace("\\", "\\\\").replace(":", "\\:")
 
 
 def wrap_overlay_text(text: str, max_chars_per_line: int = 16) -> str:
@@ -137,7 +168,7 @@ def build_text_overlay_filters(text_overlays: list[dict], prev_label: str, style
     accent = ff_color(settings.get("accent_color"), "0x" + str(palette[1]).lstrip("#") if len(palette) > 1 else OVERLAY_COLORS["yellow"])
     text_color = ff_color(settings.get("text_color"), "0xF4F7EF")
     background = ff_color(settings.get("background_color"), "0x060B16")
-    font_size = max(42, min(96, int(settings.get("font_size") or 62)))
+    font_size = max(42, min(72, int(settings.get("font_size") or 54)))
     max_chars = max(12, min(34, int(settings.get("max_chars_per_line") or 24)))
     band_alpha = max(.2, min(.95, float(settings.get("background_opacity") or .72)))
     position = settings.get("position") if settings.get("position") in {"top", "middle", "lower"} else "top"
@@ -145,6 +176,8 @@ def build_text_overlay_filters(text_overlays: list[dict], prev_label: str, style
     uppercase = bool(settings.get("uppercase", True))
     accent_stripe = bool(settings.get("accent_stripe", False))
     for i, ov in enumerate(text_overlays):
+        item_font_size = max(42, min(72, int(ov.get("font_size") or font_size)))
+        item_position = ov.get("position") if ov.get("position") in {"top", "middle", "lower"} else position
         headline = str(ov.get("text") or "").upper() if uppercase else str(ov.get("text") or "")
         kicker_raw = str(ov.get("kicker") or settings.get("kicker") or "").upper()
         raw = wrap_overlay_text(headline, max_chars)
@@ -152,8 +185,8 @@ def build_text_overlay_filters(text_overlays: list[dict], prev_label: str, style
         kicker = escape_drawtext(kicker_raw)
         enable = f"between(t,{ov['start']},{ov['end']})"
         line_count = raw.count("\n") + 1
-        band_h = 118 + line_count * (font_size + 18)
-        band_y = 78 if position == "top" else ((H - band_h) // 2 if position == "middle" else min(H - band_h - 330, int(H * .6)))
+        band_h = 104 + line_count * (item_font_size + 16)
+        band_y = 78 if item_position == "top" else ((H - band_h) // 2 if item_position == "middle" else min(H - band_h - 330, int(H * .6)))
         margin_x = 74
         text_x = str(margin_x) if align == "left" else ("(w-text_w)/2" if align == "center" else f"w-text_w-{margin_x}")
         band_label = f"bnd{i+1}"
@@ -175,7 +208,7 @@ def build_text_overlay_filters(text_overlays: list[dict], prev_label: str, style
             )
             carrier_label = kicker_label
         parts.append(
-            f"[{carrier_label}]drawtext=text='{text}':fontfile='{FONT_BOLD}':fontsize={font_size}:fontcolor={text_color}:"
+            f"[{carrier_label}]drawtext=text='{text}':fontfile='{FONT_BOLD}':fontsize={item_font_size}:fontcolor={text_color}:"
             f"expansion=none:borderw=3:bordercolor=black@0.9:shadowcolor=black@0.6:shadowx=2:shadowy=2:"
             f"x={text_x}:y={band_y}+76:line_spacing=14:"
             f"enable='{enable}'[{out_label}]"
@@ -198,13 +231,14 @@ def compose(avatar_path: str, slots: list[dict], chart_dir: str,
     tmp_dir = os.path.join(os.path.dirname(output_path), "_tmp")
     os.makedirs(tmp_dir, exist_ok=True)
 
-    print(f"[1] Normalizing {len(slots)} B-roll slots...")
+    style_id = str(((edit_plan or {}).get("style") or {}).get("id") or "editorial-proof")
+    print(f"[1] Normalizing {len(slots)} B-roll slots with style '{style_id}'...")
     chart_clips = []
     for i, slot in enumerate(slots):
         source = find_broll_source(slot["name"], chart_dir, slot.get("type", "chart"))
         dur = slot["end"] - slot["start"]
         clip_path = os.path.join(tmp_dir, f"c{i+1}.mp4")
-        normalize_broll_clip(source, dur, clip_path)
+        normalize_broll_clip(source, dur, clip_path, style_id, slot.get("type") in {"pexels", "pixabay", "stock"})
         chart_clips.append(clip_path)
         if "pexels" in source:
             kind = "Pexels stock"

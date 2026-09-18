@@ -4,7 +4,7 @@
     "name": "Editorial Proof",
     "bestFor": "Tài chính, giáo dục, chuyên gia",
     "description": "Talking-head kết hợp chart và sơ đồ chứng minh từng luận điểm.",
-    "palette": ["#0B1320", "#F5B83D", "#F7F4EC"],
+    "palette": ["#060B16", "#B6FF36", "#F4F7EF"],
     "cutRhythm": "semantic",
     "caption": "phrase-highlight",
     "brollPriority": ["technical-proof", "owned-assets", "real-world"]

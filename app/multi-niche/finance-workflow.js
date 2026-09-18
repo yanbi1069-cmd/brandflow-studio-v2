@@ -133,7 +133,7 @@ export default function FinanceWorkflow() {
   const [scriptApproved, setScriptApproved] = useState(false);
   const [sourceRoute, setSourceRoute] = useState("avatar");
   const [avatar, setAvatar] = useState({ voiceId: "", avatarIds: "", speed: 1, duration: 55, test: true, costConfirmed: false, notify: true });
-  const [noface, setNoface] = useState({ voiceSource: "tts", visualMix: "50 / 30 / 20" });
+  const [noface, setNoface] = useState({ voiceSource: "tts", voice: "vi-VN-HoaiMyNeural", visualMix: "50 / 30 / 20" });
   const [voiceUpload, setVoiceUpload] = useState(null);
   const [upload, setUpload] = useState(null);
   const [sourceFile, setSourceFile] = useState(null);
@@ -323,9 +323,11 @@ export default function FinanceWorkflow() {
   async function createSourceArtifact() {
     const sourceOnlyMode = entryMode === "edit" || entryMode === "publish";
     if (!scriptApproved && !sourceOnlyMode) return setNotice("Hãy duyệt kịch bản trước khi chuẩn bị source video.");
-    if (!sourceOnlyMode && !scriptTiming(selectedScript, avatar.speed, avatar.duration).onTarget) return setNotice("Kịch bản chưa khớp thời lượng mục tiêu. Hãy chỉnh độ dài rồi duyệt lại trước khi tạo video.");
+    const requiresGeneratedVoice = sourceRoute === "avatar" || (sourceRoute === "noface" && noface.voiceSource === "tts");
+    if (!sourceOnlyMode && requiresGeneratedVoice && !scriptTiming(selectedScript, avatar.speed, avatar.duration).onTarget) return setNotice("Kịch bản chưa khớp thời lượng mục tiêu. Hãy chỉnh độ dài rồi duyệt lại trước khi tạo video.");
     if (sourceOnlyMode && sourceRoute !== "upload") return setNotice("Edit-only/Publish-only cần chọn file nguồn.");
-    if (sourceRoute === "noface" && noface.voiceSource !== "tts" && !voiceUpload) return setNotice("Hãy tải tệp giọng đọc trước khi tạo video No-face.");
+    if (sourceRoute === "noface" && noface.voiceSource === "recorded" && !voiceUpload) return setNotice("Hãy tải tệp giọng đọc trước khi tạo video No-face.");
+    if (sourceRoute === "noface" && noface.voiceSource === "approved-audio" && !avatar.costConfirmed) return setNotice("Hãy tích xác nhận sử dụng credit HeyGen để tạo audio.");
     if (sourceRoute === "upload" && !sourceFile) return setNotice("Hãy chọn lại video nguồn trong phiên hiện tại trước.");
     if (sourceRoute === "avatar") {
       if (!avatar.costConfirmed) return setNotice("Hãy tích xác nhận ý định sử dụng credit HeyGen trước.");
@@ -348,14 +350,21 @@ export default function FinanceWorkflow() {
     } else if (sourceRoute === "noface") {
       setVideoTask("processing"); setTaskStartedAt(Date.now()); setTaskMessage("Đang chuẩn bị nguồn giọng và storyboard no-face...");
       try {
-        if (noface.voiceSource === "tts") {
-          setSourceArtifact({ type: "noface_plan.json", route: "no-face", voiceSource: noface.voiceSource, targetSeconds: Number(avatar.duration), scenes: [selectedScript.hook, selectedScript.body, selectedScript.cta], status: "storyboard-ready" });
-          setNotice("Đã tạo storyboard no-face. Cần chọn voice thu sẵn để render MP4 cục bộ ở phiên bản hiện tại.");
-        } else {
-          const data = await uploadToLocalAgent(voiceUpload, "voice");
-          setSourceArtifact({ type: "noface_plan.json", route: "no-face", voiceSource: noface.voiceSource, sourceFile: data.file, projectId: data.projectId, targetSeconds: Number(avatar.duration), scenes: [selectedScript.hook, selectedScript.body, selectedScript.cta], status: "ready" });
-          setNotice("Đã tải voice vào local-agent; sẵn sàng dựng video no-face.");
+        let projectId;
+        let sourceFile = "";
+        if (noface.voiceSource === "recorded") {
+          const uploaded = await uploadToLocalAgent(voiceUpload, "voice");
+          projectId = uploaded.projectId;
+          sourceFile = uploaded.file;
         }
+        if (noface.voiceSource === "approved-audio" && !window.confirm("Dùng HeyGen Voice ID để tạo audio ngay bây giờ? Tác vụ có thể sử dụng credit của tài khoản.")) return setNotice("Đã hủy trước khi gọi HeyGen; chưa sử dụng credit.");
+        const response = await fetch("/api/local-agent/noface", { method: "POST", headers: { "Content-Type": "application/json", ...(secrets.heygen ? { "x-heygen-key": secrets.heygen } : {}) }, body: JSON.stringify({ projectId, sourceFile, voiceSource: noface.voiceSource, voice: noface.voice, voiceId: avatar.voiceId, avatarIds: avatar.avatarIds.split(/\r?\n|,/).map((item)=>item.trim()).filter(Boolean), test: avatar.test, confirmed: noface.voiceSource === "approved-audio", speed: Number(avatar.speed), domainId, styleId, targetSeconds: Number(avatar.duration), visualMix: noface.visualMix, script: selectedScript }) });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Không thể tạo nguồn no-face.");
+        projectId = data.projectId;
+        const result = await waitForAgentJob(data.job.id, "Đang tạo giọng cho video no-face...", (job) => setTaskMessage(job.message || "Đang tạo giọng cho video no-face..."));
+        setSourceArtifact({ type: "noface_plan.json", route: "no-face", voiceSource: noface.voiceSource, sourceFile: result.file, projectId, targetSeconds: Number(avatar.duration), status: "ready", plan: result.plan });
+        setNotice("Voice và storyboard no-face đã sẵn sàng. Bạn có thể dựng video hoàn chỉnh.");
       } catch (error) { setSourceArtifact(null); setNotice(error.message || "Không thể chuẩn bị video no-face."); }
       finally { setVideoTask(""); setTaskStartedAt(0); setTaskMessage(""); }
     } else {
@@ -377,7 +386,7 @@ export default function FinanceWorkflow() {
     setBusy("edit"); setVideoTask("editing"); setTaskStartedAt(Date.now()); setTaskMessage("Đang gửi tác vụ dựng tới local-agent..."); setNotice("");
     setEditRun({ status: "running", progress: 2, message: "Đang chuẩn bị video nguồn...", error: "" });
     try {
-      const response = await fetch("/api/local-agent/edit", { method: "POST", headers: { "Content-Type": "application/json", ...(secrets.pexels ? { "x-pexels-key": secrets.pexels } : {}), ...(secrets.pixabay ? { "x-pixabay-key": secrets.pixabay } : {}) }, body: JSON.stringify({ projectId: sourceArtifact.projectId, sourceFile: sourceArtifact.sourceFile, styleId, videoMode: sourceRoute, targetSeconds: Number(avatar.duration), version, feedback: feedbackOverride, footer: brand.name }) });
+      const response = await fetch("/api/local-agent/edit", { method: "POST", headers: { "Content-Type": "application/json", ...(secrets.pexels ? { "x-pexels-key": secrets.pexels } : {}), ...(secrets.pixabay ? { "x-pixabay-key": secrets.pixabay } : {}) }, body: JSON.stringify({ projectId: sourceArtifact.projectId, sourceFile: sourceArtifact.sourceFile, styleId, videoMode: sourceRoute, targetSeconds: Number(avatar.duration), version, feedback: feedbackOverride }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
       const result = await waitForAgentJob(data.job.id, "Agent đang dựng video...", (job) => {
@@ -402,6 +411,14 @@ export default function FinanceWorkflow() {
     setFeedback((current) => [...current, { version: nextVersion, text, createdAt: new Date().toISOString() }]);
     setFeedbackText("");
     await createEditPlan(nextVersion, text);
+  }
+
+  async function renderSelectedStyle() {
+    const currentVersion = Number(editPlan?.version || 0);
+    const previousStyle = editPlan?.style?.id;
+    const styleChanged = Boolean(previousStyle && previousStyle !== styleId);
+    const note = styleChanged ? `Đổi phong cách từ ${editPlan.style.name || previousStyle} sang ${selectedStyle.name}.` : "";
+    await createEditPlan(currentVersion ? currentVersion + 1 : 1, note);
   }
 
   function approveFinal() {
@@ -476,16 +493,18 @@ export default function FinanceWorkflow() {
     <div id="step-4"><Section number="03" title="Tạo video nguồn" subtitle="Chọn AI Avatar, video không lộ mặt hoặc tải lên footage bạn đã quay." state={sourceArtifact ? "Video đã chuẩn bị" : undefined}>
       <div className={styles.modeGrid}>{[["avatar","Video HeyGen Avatar","Người dẫn AI theo thương hiệu"],["noface","Video No-face","Giọng đọc và hình ảnh minh họa"],["upload","Upload video gốc có sẵn","Dựng lại từ footage của bạn"]].map(([id,name,desc]) => <button key={id} className={sourceRoute === id ? styles.selected : ""} onClick={() => { setSourceRoute(id); setSourceArtifact(null); }}><strong>{name}</strong><span>{desc}</span></button>)}</div>
       {sourceRoute === "avatar" && <><Status tone={localAgent.online && localAgent.heygen ? "info" : "warning"}>{!localAgent.checked ? "Đang kiểm tra local-agent..." : localAgent.online && localAgent.heygen ? `HeyGen Photo Avatar III và local-agent đã sẵn sàng${localAgent.defaults.voiceConfigured && localAgent.defaults.avatarConfigured ? " · Có Voice/Avatar mặc định trong .env.local" : ""}. Không tự chuyển sang Avatar IV nếu tài khoản không hỗ trợ.` : "Local-agent chưa chạy hoặc chưa đọc được HEYGEN_API_KEY. Hãy khởi động bằng npm run dev:full."}</Status><div className={styles.formGrid}><Field label="HeyGen Voice ID" help="Có thể để trống nếu HEYGEN_VOICE_ID đã có trong .env.local."><input placeholder="Dùng mặc định từ .env.local" value={avatar.voiceId} onChange={(event) => setAvatar({ ...avatar, voiceId: event.target.value })}/></Field><Field label="Photo Avatar III IDs — phân cách bằng dấu phẩy hoặc xuống dòng" help="Chỉ dùng Photo Avatar III; không tự fallback sang engine khác."><textarea rows="2" placeholder="Dùng mặc định từ .env.local" value={avatar.avatarIds} onChange={(event) => setAvatar({ ...avatar, avatarIds: event.target.value })}/></Field><Field label="Voice speed"><input type="number" min="0.5" max="1.5" step="0.05" value={avatar.speed} onChange={(event) => setAvatar({ ...avatar, speed: event.target.value })}/></Field><label className={styles.checkCard}><input type="checkbox" checked={avatar.test} onChange={(event) => setAvatar({ ...avatar, test: event.target.checked })}/><span><strong>HeyGen test mode</strong><small>Ưu tiên bản test trước production.</small></span></label><label className={styles.checkCard}><input type="checkbox" checked={avatar.costConfirmed} onChange={(event) => setAvatar({ ...avatar, costConfirmed: event.target.checked })}/><span><strong>Tôi hiểu tác vụ có thể dùng credit</strong><small>Khi bấm tạo video, hệ thống vẫn hỏi xác nhận lần cuối.</small></span></label><label className={styles.checkCard}><input type="checkbox" checked={avatar.notify} onChange={async(event)=>{const checked=event.target.checked;setAvatar({...avatar,notify:checked});if(checked&&typeof Notification!=="undefined"&&Notification.permission==="default")await Notification.requestPermission();}}/><span><strong>Thông báo khi HeyGen xong</strong><small>Hiển thị thông báo trình duyệt nếu bạn cho phép.</small></span></label></div></>}
-      {sourceRoute === "noface" && <div className={styles.formGrid}><Field label="Nguồn giọng"><select value={noface.voiceSource} onChange={(event) => {setNoface({ ...noface, voiceSource: event.target.value });setVoiceUpload(null);}}><option value="tts">Giọng AI</option><option value="recorded">Voice thu sẵn</option><option value="approved-audio">Audio đã duyệt</option></select></Field>{noface.voiceSource !== "tts" && <Field label="Tải tệp giọng đọc"><input type="file" accept="audio/*" onChange={(event)=>setVoiceUpload(event.target.files?.[0] || null)}/>{voiceUpload&&<small>{voiceUpload.name} · {(voiceUpload.size/1024/1024).toFixed(1)} MB</small>}</Field>}</div>}
+      {sourceRoute === "noface" && <div className={styles.formGrid}><Field label="Nguồn giọng"><select value={noface.voiceSource} onChange={(event) => {setNoface({ ...noface, voiceSource: event.target.value });setVoiceUpload(null);}}><option value="tts">Giọng AI có sẵn</option><option value="recorded">Voice thu sẵn</option><option value="approved-audio">Audio đã duyệt · HeyGen Voice ID</option></select></Field>{noface.voiceSource === "tts" ? <Field label="Giọng AI"><select value={noface.voice || "vi-VN-HoaiMyNeural"} onChange={(event)=>setNoface({...noface,voice:event.target.value})}><option value="vi-VN-HoaiMyNeural">Hoài My · Nữ</option><option value="vi-VN-NamMinhNeural">Nam Minh · Nam</option></select></Field> : noface.voiceSource === "recorded" ? <Field label="Tải tệp giọng đọc"><input type="file" accept="audio/*" onChange={(event)=>setVoiceUpload(event.target.files?.[0] || null)}/>{voiceUpload&&<small>{voiceUpload.name} · {(voiceUpload.size/1024/1024).toFixed(1)} MB</small>}</Field> : <><Field label="HeyGen Voice ID" help="Có thể để trống nếu HEYGEN_VOICE_ID đã có trong .env.local."><input placeholder="Dùng Voice ID mặc định" value={avatar.voiceId} onChange={(event)=>setAvatar({...avatar,voiceId:event.target.value})}/></Field><label className={styles.checkCard}><input type="checkbox" checked={avatar.costConfirmed} onChange={(event)=>setAvatar({...avatar,costConfirmed:event.target.checked})}/><span><strong>Tôi xác nhận tạo audio bằng HeyGen</strong><small>Tác vụ có thể sử dụng credit của tài khoản.</small></span></label></>}</div>}
       {sourceRoute === "upload" && <Field label="Chọn video nguồn"><input type="file" accept="video/*" onChange={(event) => { const file = event.target.files?.[0]; setSourceFile(file || null); setUpload(file ? { name: file.name, size: file.size, type: file.type, lastModified: file.lastModified } : null); setSourceArtifact(null); }}/>{upload && <small>{upload.name} · {(upload.size / 1024 / 1024).toFixed(1)} MB</small>}</Field>}
       <div className={styles.actionRow}><span>{sourceArtifact?.status === "ready" ? "Video nguồn đã sẵn sàng" : sourceArtifact ? "Tác vụ video đã được tạo" : "Chưa chuẩn bị video nguồn"}</span><button className={styles.primary} onClick={createSourceArtifact} disabled={videoTask || (!scriptApproved && entryMode !== "edit" && entryMode !== "publish")}>{videoTask && videoTask !== "editing" ? videoTaskLabel : sourceRoute === "avatar" ? "Tạo video HeyGen" : "Chuẩn bị video"}</button></div>
       {videoTask && videoTask !== "editing" && <div className={styles.inlineJob}><span className={styles.spinner}/><div><strong>{taskMessage || videoTaskLabel}</strong><small>Đã chạy {elapsedLabel(elapsedSeconds)} · Thời gian thực tế phụ thuộc độ dài video và hàng đợi nhà cung cấp.</small></div></div>}
       {heygenComplete && sourceArtifact?.route === "avatar" && <div className={styles.successBanner}><div><Icon name="check"/><span><strong>Video HeyGen đã hoàn thành</strong><small>Hãy kiểm tra nhanh video nguồn, sau đó chuyển sang bước Dựng video.</small></span></div><aside><a href="#step-6" className={styles.secondary}>Xem video HeyGen</a><a href="#step-5" className={styles.primary}>Qua bước Edit</a></aside></div>}
+      {sourceArtifact?.route === "no-face" && sourceArtifact?.status === "ready" && <div className={styles.successBanner}><div><Icon name="check"/><span><strong>Audio no-face đã sẵn sàng</strong><small>Voice và storyboard đã được lưu. Chuyển sang bước Dựng video để tạo MP4.</small></span></div><aside><a href="#step-5" className={styles.primary}>Qua bước Edit</a></aside></div>}
     </Section></div>
 
     <div id="step-5"><Section number="04" title="Chọn phong cách dựng" subtitle="Cá nhân hóa nhịp cắt, phụ đề, chuyển cảnh và hình ảnh minh họa theo dấu ấn thương hiệu." state={editPlan ? `Phiên bản ${editPlan.version}` : undefined}>
-      <div className={styles.styleGrid}>{editStyles.map((item) => <button key={item.id} className={styleId === item.id ? styles.selected : ""} onClick={() => { setStyleId(item.id); setEditPlan(null); setEditRun(EMPTY_EDIT_RUN); }} disabled={videoTask === "editing"}><div>{item.palette.map((color) => <i key={color} style={{ background: color }}/>)}</div><strong>{item.name}{domain.defaultStyle === item.id && <small>Đề xuất</small>}</strong><span>{item.bestFor}</span><p>{item.description}</p></button>)}</div>
-      <div className={styles.actionRow}><span>{entryMode === "publish" ? "Bản hoàn chỉnh không cần dựng lại" : `${selectedStyle.cutRhythm} · ${selectedStyle.caption}`}</span><button className={styles.primary} onClick={() => createEditPlan(1)} disabled={entryMode === "publish" || !sourceArtifact || Boolean(busy)}>{busy === "edit" ? "Đang dựng video..." : "Dựng video hoàn chỉnh"}</button></div>
+      <div className={styles.styleGrid}>{editStyles.map((item) => <button key={item.id} className={styleId === item.id ? styles.selected : ""} onClick={() => { setStyleId(item.id); setFinalApproved(false); }} disabled={videoTask === "editing"}><div>{item.palette.map((color) => <i key={color} style={{ background: color }}/>)}</div><strong>{item.name}{domain.defaultStyle === item.id && <small>Đề xuất</small>}</strong><span>{item.bestFor}</span><p>{item.description}</p></button>)}</div>
+      {editPlan?.style?.id && editPlan.style.id !== styleId && <div className={styles.styleNotice}><Icon name="check"/><span><strong>Đã chọn {selectedStyle.name}</strong><small>Bản hiện tại vẫn là {editPlan.style.name}. Dựng version mới để áp dụng palette, caption, graphic và màu footage của phong cách vừa chọn.</small></span></div>}
+      <div className={styles.actionRow}><span>{entryMode === "publish" ? "Bản hoàn chỉnh không cần dựng lại" : `${selectedStyle.cutRhythm} · ${selectedStyle.caption} · màu được áp dụng khi render`}</span><button className={styles.primary} onClick={renderSelectedStyle} disabled={entryMode === "publish" || !sourceArtifact || Boolean(busy)}>{busy === "edit" ? "Đang dựng video..." : editPlan?.style?.id && editPlan.style.id !== styleId ? "Dựng phiên bản với phong cách này" : editPlan ? "Dựng phiên bản mới" : "Dựng video hoàn chỉnh"}</button></div>
       {editRun.status !== "idle" && <div className={`${styles.editJob} ${editRun.status === "error" ? styles.editJobError : editRun.status === "done" ? styles.editJobDone : ""}`} role={editRun.status === "error" ? "alert" : "status"} aria-live="polite" aria-busy={editRun.status === "running"}>
         <div className={styles.editJobHead}>{editRun.status === "running" ? <span className={styles.spinner}/> : <Icon name="check"/>}<div><strong>{editRun.status === "done" ? "Video đã dựng xong" : editRun.status === "error" ? "Dựng video tạm dừng" : editRun.message || "Đang dựng video..."}</strong><small>{editRun.status === "running" ? `Đã chạy ${elapsedLabel(elapsedSeconds)} · ${Math.round(editRun.progress)}%` : editRun.message}</small></div>{editRun.status === "error" && <button className={styles.secondary} onClick={() => createEditPlan(editPlan?.version || 1)} disabled={Boolean(busy)}>Thử dựng lại</button>}</div>
         <div className={styles.editProgress} aria-label={`Tiến độ dựng video ${Math.round(editRun.progress)}%`}><i style={{width:`${Math.max(0,Math.min(100,editRun.progress))}%`}}/></div>

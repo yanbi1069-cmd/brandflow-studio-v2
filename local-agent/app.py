@@ -19,6 +19,7 @@ from agent_core import (
     build_qa_report,
     check_claims,
     create_noface_plan,
+    prepare_noface_source,
     demo_research,
     demo_scripts,
     get_domain_pack,
@@ -185,10 +186,17 @@ class AgentHandler(BaseHTTPRequestHandler):
                 PROJECTS.update(body["project_id"], {"stage": "heygen_submitted", "route": "avatar"})
                 return self._json({"ok": True, "job": job}, HTTPStatus.ACCEPTED)
             if parsed.path == "/api/noface":
+                if body.get("voice_source") == "approved-audio" and not body.get("confirmed"):
+                    raise PermissionError("Cần xác nhận sử dụng credit HeyGen để tạo audio")
                 folder = PROJECTS.folder(body["project_id"])
-                plan = create_noface_plan(folder, body)
-                PROJECTS.update(body["project_id"], {"stage": "noface_planned", "route": "no-face"})
-                return self._json({"ok": True, "plan": plan})
+                def prepare_and_save(progress):
+                    result = prepare_noface_source(folder, body, progress)
+                    PROJECTS.update(body["project_id"], {"stage": "noface_ready", "route": "no-face", "uploaded_source": result["file"]})
+                    return result
+
+                job = JOBS.start("noface", prepare_and_save)
+                PROJECTS.update(body["project_id"], {"stage": "noface_preparing", "route": "no-face"})
+                return self._json({"ok": True, "job": job}, HTTPStatus.ACCEPTED)
             if parsed.path == "/api/feedback":
                 folder = PROJECTS.folder(body["project_id"])
                 feedback_path = folder / "edit_feedback.json"

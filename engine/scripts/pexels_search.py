@@ -30,6 +30,9 @@ def search_portrait_asset(query: str, used_urls: set | None = None, api_key: str
     data = resp.json()
 
     for video in data.get("videos", []):
+        asset_key = f"pexels:{video.get('id')}"
+        if used_urls and asset_key in used_urls:
+            continue
         files = [f for f in video.get("video_files", []) if (f.get("height") or 0) > (f.get("width") or 0) and (f.get("width") or 0) >= 480]
         if not files:
             files = [f for f in video.get("video_files", []) if (f.get("height") or 0) > (f.get("width") or 0)]

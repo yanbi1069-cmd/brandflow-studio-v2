@@ -12,7 +12,34 @@ VIDEO_W, VIDEO_H = 1080, 1920
 MAX_WORDS_PER_CARD = 6
 MAX_CHARS_PER_CARD = 28  # tránh tràn viền khi dòng chứa từ dài (VD tên thương hiệu tiếng Anh)
 
-ASS_HEADER = f"""[Script Info]
+def ass_color(hex_color: str, alpha: str = "00") -> str:
+    value = str(hex_color or "#FFFFFF").lstrip("#")
+    if len(value) != 6:
+        value = "FFFFFF"
+    return f"&H{alpha}{value[4:6]}{value[2:4]}{value[0:2]}"
+
+
+def caption_profile(style_id: str, accent: str) -> dict:
+    profiles = {
+        "editorial-proof": {"font": "Montserrat SemiBold", "size": 62, "border": 3, "shadow": 1, "margin": 240, "style": 1},
+        "clean-expert": {"font": "Arial", "size": 54, "border": 2, "shadow": 0, "margin": 250, "style": 1},
+        "warm-story": {"font": "Arial", "size": 55, "border": 1, "shadow": 0, "margin": 230, "style": 3},
+        "luxury-minimal": {"font": "Georgia", "size": 52, "border": 2, "shadow": 1, "margin": 250, "style": 1},
+        "bold-social": {"font": "Arial", "size": 72, "border": 5, "shadow": 2, "margin": 205, "style": 1},
+        "tiktok-creator": {"font": "Arial", "size": 74, "border": 6, "shadow": 1, "margin": 195, "style": 1},
+        "screen-demo": {"font": "Arial", "size": 48, "border": 2, "shadow": 0, "margin": 190, "style": 3},
+        "data-kinetic": {"font": "Montserrat ExtraBold", "size": 66, "border": 3, "shadow": 1, "margin": 225, "style": 1},
+        "documentary-reveal": {"font": "Georgia", "size": 54, "border": 2, "shadow": 1, "margin": 235, "style": 3},
+        "maximalist-type": {"font": "Arial", "size": 76, "border": 5, "shadow": 2, "margin": 200, "style": 1},
+        "shadow-cut": {"font": "Arial", "size": 60, "border": 4, "shadow": 2, "margin": 225, "style": 1},
+    }
+    profile = profiles.get(style_id, {"font": "Arial", "size": 60, "border": 3, "shadow": 1, "margin": 235, "style": 1})
+    return {**profile, "accent": accent}
+
+
+def ass_header(style_id: str, accent: str) -> str:
+    profile = caption_profile(style_id, accent)
+    return f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {VIDEO_W}
 PlayResY: {VIDEO_H}
@@ -21,7 +48,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,62,&H00FFFFFF,&H000000FF,&H00000000,&H99000000,1,0,0,0,100,100,0,0,1,3,1,2,45,45,240,1
+Style: Default,{profile['font']},{profile['size']},&H00FFFFFF,{ass_color(accent)},&H00000000,&H99000000,1,0,0,0,100,100,0,0,{profile['style']},{profile['border']},{profile['shadow']},2,45,45,{profile['margin']},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -54,11 +81,11 @@ def chunk_words(text: str, n: int):
         yield chunk
 
 
-def generate_ass(timestamps_file: str, output_file: str):
+def generate_ass(timestamps_file: str, output_file: str, style_id: str = "editorial-proof", accent: str = "#B6FF36"):
     with open(timestamps_file, encoding="utf-8") as f:
         segments = json.load(f)
 
-    lines = [ASS_HEADER]
+    lines = [ass_header(style_id, accent)]
     card_count = 0
 
     for seg in segments:
@@ -89,4 +116,6 @@ def generate_ass(timestamps_file: str, output_file: str):
 if __name__ == "__main__":
     ts_file  = sys.argv[1] if len(sys.argv) > 1 else "timestamps.json"
     out_file = sys.argv[2] if len(sys.argv) > 2 else "captions.ass"
-    generate_ass(ts_file, out_file)
+    style = sys.argv[3] if len(sys.argv) > 3 else "editorial-proof"
+    accent = sys.argv[4] if len(sys.argv) > 4 else "#B6FF36"
+    generate_ass(ts_file, out_file, style, accent)
